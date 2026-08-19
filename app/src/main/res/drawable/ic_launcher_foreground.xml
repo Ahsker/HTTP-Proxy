@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Server Proxy Box Top -->
+    <path
+        android:fillColor="#4D88FF"
+        android:pathData="M34,28h40c3.31,0 6,2.69 6,6v10c0,3.31 -2.69,6 -6,6H34c-3.31,0 -6,-2.69 -6,-6V34c0,-3.31 2.69,-6 6,-6z" />
+    <path
+        android:fillColor="#80B3FF"
+        android:pathData="M34,38h40v4H34z" />
+    <!-- Indicator LEDs -->
+    <path
+        android:fillColor="#68D391"
+        android:pathData="M36,34a2,2 0 1,0 4,0a2,2 0 1,0 -4,0" />
+    <path
+        android:fillColor="#63B3ED"
+        android:pathData="M44,34a2,2 0 1,0 4,0a2,2 0 1,0 -4,0" />
+
+    <!-- Server Proxy Box Bottom -->
+    <path
+        android:fillColor="#3182CE"
+        android:pathData="M34,58h40c3.31,0 6,2.69 6,6v10c0,3.31 -2.69,6 -6,6H34c-3.31,0 -6,-2.69 -6,-6V64c0,-3.31 2.69,-6 6,-6z" />
+    <path
+        android:fillColor="#63B3ED"
+        android:pathData="M34,68h40v4H34z" />
+    <!-- Indicator LEDs -->
+    <path
+        android:fillColor="#68D391"
+        android:pathData="M36,64a2,2 0 1,0 4,0a2,2 0 1,0 -4,0" />
+    <path
+        android:fillColor="#F6AD55"
+        android:pathData="M44,64a2,2 0 1,0 4,0a2,2 0 1,0 -4,0" />
+
+    <!-- Transfer Network Arrows -->
+    <!-- Up Arrow (Orange) -->
+    <path
+        android:fillColor="#FF7A45"
+        android:pathData="M48,56l0,-8l-4,0l6,-8l6,8l-4,0l0,8z" />
+    <!-- Down Arrow (Green) -->
+    <path
+        android:fillColor="#38A169"
+        android:pathData="M60,48l0,8l4,0l-6,8l-6,-8l4,0l0,-8z" />
+
+    <!-- USB/Network Connection Line -->
+    <path
+        android:fillColor="#A0AEC0"
+        android:pathData="M52,80h4v6h-4z" />
+    <path
+        android:fillColor="#CBD5E0"
+        android:pathData="M50,86h8v4h-8z" />
+</vector>

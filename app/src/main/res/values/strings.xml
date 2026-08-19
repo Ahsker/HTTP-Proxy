@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">HTTP Proxy</string>
+    <string name="proxy_service_channel_name">Proxy Server Service</string>
+    <string name="proxy_service_channel_desc">Shows ongoing HTTP proxy status and quick controls</string>
+    <string name="proxy_notification_title">HTTP Proxy is running</string>
+    <string name="proxy_notification_stop">Stop Server</string>
+</resources>

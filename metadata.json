@@ -1,0 +1,6 @@
+{
+  "name": "HTTP Proxy",
+  "description": "High-performance HTTP & HTTPS proxy server for Android to share internet with USB connected Windows PC, Wi-Fi Hotspot, and ADB reverse port forwarding.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
