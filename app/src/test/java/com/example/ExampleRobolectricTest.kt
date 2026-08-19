@@ -5,7 +5,9 @@ import androidx.test.core.app.ApplicationProvider
 import com.example.model.ClientSlotStats
 import com.example.model.ControlMode
 import com.example.model.ProxyConfig
+import com.example.model.SessionLog
 import com.example.network.NetworkUtils
+import com.example.proxy.HttpProxyServer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Test
@@ -60,5 +62,12 @@ class ExampleRobolectricTest {
         assertEquals(1024L, slot.bytesSent)
         assertEquals(2048L, slot.bytesReceived)
         assertEquals(ControlMode.USB_SINGLE_USER, ControlMode.values()[0])
+    }
+
+    @Test
+    fun `server instance initial state`() {
+        val server = HttpProxyServer()
+        assertEquals(0, server.sessionLogs.value.size)
+        assertEquals(3, server.clientSlots.value.size)
     }
 }

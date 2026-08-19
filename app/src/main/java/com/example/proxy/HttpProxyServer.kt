@@ -216,7 +216,6 @@ class HttpProxyServer {
 
     private fun updateSlotsState() {
         val allTrackedIps = synchronized(clientSlotOrder) {
-            // Keep active first, then recent
             val sorted = clientSlotOrder.distinct().sortedWith(
                 compareByDescending<String> { (activeClientsMap[it] ?: 0) > 0 }
                     .thenByDescending { perClientMap[it]?.lastActiveTimestamp ?: 0L }
@@ -437,6 +436,7 @@ class HttpProxyServer {
                         var sentReq = reqBytes.size.toLong()
 
                         var contentLength = 0L
+                        var isChunked = false
                         var hasHostHeader = false
 
                         for (h in headers) {
@@ -450,6 +450,9 @@ class HttpProxyServer {
                             }
                             if (h.startsWith("Content-Length:", ignoreCase = true)) {
                                 contentLength = h.substringAfter(":").trim().toLongOrNull() ?: 0L
+                            }
+                            if (h.startsWith("Transfer-Encoding:", ignoreCase = true) && h.contains("chunked", ignoreCase = true)) {
+                                isChunked = true
                             }
                             val hBytes = "$h\r\n".toByteArray(Charsets.US_ASCII)
                             remoteOut.write(hBytes)
@@ -470,7 +473,7 @@ class HttpProxyServer {
                         sessionReceivedBytes += sentReq
                         trackClientActivity(clientIp, 0L, sentReq)
 
-                        // If request has a body (POST/PUT), forward it
+                        // If request has a body with Content-Length (POST/PUT/PATCH), forward it
                         if (contentLength > 0) {
                             val buffer = ByteArray(8192)
                             var remaining = contentLength
@@ -485,7 +488,57 @@ class HttpProxyServer {
                                 intervalReceivedBytes.addAndGet(read.toLong())
                                 trackClientActivity(clientIp, 0L, read.toLong())
                             }
+                        } else if (isChunked) {
+                            // Forward chunked request body
+                            while (true) {
+                                val chunkHeader = readLine(clientIn) ?: break
+                                val chunkHeaderBytes = "$chunkHeader\r\n".toByteArray(Charsets.US_ASCII)
+                                remoteOut.write(chunkHeaderBytes)
+                                totalReceivedBytes.addAndGet(chunkHeaderBytes.size.toLong())
+                                intervalReceivedBytes.addAndGet(chunkHeaderBytes.size.toLong())
+                                sessionReceivedBytes += chunkHeaderBytes.size
+                                trackClientActivity(clientIp, 0L, chunkHeaderBytes.size.toLong())
+
+                                val chunkSizeHex = chunkHeader.substringBefore(";").trim()
+                                val chunkSize = try { chunkSizeHex.toInt(16) } catch (_: Exception) { 0 }
+
+                                if (chunkSize > 0) {
+                                    val buffer = ByteArray(8192)
+                                    var remaining = chunkSize
+                                    while (remaining > 0) {
+                                        val toRead = Math.min(buffer.size, remaining)
+                                        val read = clientIn.read(buffer, 0, toRead)
+                                        if (read == -1) break
+                                        remoteOut.write(buffer, 0, read)
+                                        remaining -= read
+                                        sessionReceivedBytes += read
+                                        totalReceivedBytes.addAndGet(read.toLong())
+                                        intervalReceivedBytes.addAndGet(read.toLong())
+                                        trackClientActivity(clientIp, 0L, read.toLong())
+                                    }
+                                    // Read and forward CRLF after chunk data
+                                    val crlf = readLine(clientIn)
+                                    val crlfBytes = "\r\n".toByteArray(Charsets.US_ASCII)
+                                    remoteOut.write(crlfBytes)
+                                    totalReceivedBytes.addAndGet(2)
+                                    intervalReceivedBytes.addAndGet(2)
+                                    sessionReceivedBytes += 2
+                                } else {
+                                    // Final chunk (chunkSize == 0): read trailing headers if any
+                                    while (true) {
+                                        val trailer = readLine(clientIn)
+                                        val trailerBytes = if (trailer.isNullOrBlank()) "\r\n".toByteArray(Charsets.US_ASCII) else "$trailer\r\n".toByteArray(Charsets.US_ASCII)
+                                        remoteOut.write(trailerBytes)
+                                        totalReceivedBytes.addAndGet(trailerBytes.size.toLong())
+                                        intervalReceivedBytes.addAndGet(trailerBytes.size.toLong())
+                                        sessionReceivedBytes += trailerBytes.size
+                                        if (trailer.isNullOrBlank()) break
+                                    }
+                                    break
+                                }
+                            }
                         }
+
                         remoteOut.flush()
 
                         // Stream remote response back to client
@@ -647,9 +700,10 @@ class HttpProxyServer {
     private fun addSessionLog(log: SessionLog) {
         _sessionLogs.update { currentList ->
             val updated = ArrayList<SessionLog>(currentList.size + 1)
-            updated.add(0, log)
+            updated.add(log)
+            updated.addAll(currentList)
             if (updated.size > 200) {
-                updated.subList(0, 200)
+                updated.subList(0, 200).toList()
             } else {
                 updated
             }

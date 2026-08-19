@@ -166,8 +166,14 @@ class ProxyForegroundService : Service() {
 
             if (wifiLock == null) {
                 val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+                val wifiMode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    WifiManager.WIFI_MODE_FULL_LOW_LATENCY
+                } else {
+                    @Suppress("DEPRECATION")
+                    WifiManager.WIFI_MODE_FULL_HIGH_PERF
+                }
                 wifiLock = wifiManager.createWifiLock(
-                    WifiManager.WIFI_MODE_FULL_HIGH_PERF,
+                    wifiMode,
                     "HTTPProxy::WifiLock"
                 ).apply {
                     setReferenceCounted(false)
@@ -206,7 +212,7 @@ class ProxyForegroundService : Service() {
                 override fun onLost(network: Network) {
                     val config = preferences.loadConfig()
                     if (config.powerSave) {
-                        // In power save mode, if network drops, stop server or wait
+                        // In power save mode, if network drops, handle gracefully
                     }
                 }
             }
