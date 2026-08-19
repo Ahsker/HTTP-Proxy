@@ -20,9 +20,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import java.io.BufferedInputStream
-import java.io.BufferedOutputStream
-import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.io.OutputStream
 import java.net.InetAddress
@@ -36,9 +33,14 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 
-class HttpProxyServer {
+/**
+ * Ultra-low latency, high-throughput asynchronous HTTP/HTTPS Proxy Server.
+ * Optimized with direct byte buffering, TCP_NODELAY, 64KB socket buffers,
+ * and single-pass HTTP request line and header parsing.
+ */
+class HttpProxyServer(val serverName: String = "ProxyServer") {
 
-    private val tag = "HttpProxyServer"
+    private val tag = "HttpProxyServer[$serverName]"
 
     private val serverScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var serverJob: Job? = null
@@ -51,7 +53,7 @@ class HttpProxyServer {
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
 
-    private val _trafficStats = MutableStateFlow(TrafficStats())
+    private val _trafficStats = MutableStateFlow(TrafficStats(history = initialHistory()))
     val trafficStats: StateFlow<TrafficStats> = _trafficStats.asStateFlow()
 
     private val _activeConnectionsCount = MutableStateFlow(0)
@@ -88,6 +90,15 @@ class HttpProxyServer {
 
     private var currentConfig: ProxyConfig = ProxyConfig()
 
+    companion object {
+        private fun initialHistory(): List<TrafficSample> {
+            val now = System.currentTimeMillis()
+            return List(30) { i ->
+                TrafficSample(now - (30 - i) * 1000L, 0L, 0L)
+            }
+        }
+    }
+
     private fun defaultSlots(): List<ClientSlotStats> {
         return listOf(
             ClientSlotStats(slotIndex = 1, clientIp = "Not connected", deviceLabel = "User 1 (PC)", isConnected = false),
@@ -109,24 +120,35 @@ class HttpProxyServer {
         serverJob = serverScope.launch {
             try {
                 val bindAddr = if (config.host == "0.0.0.0" || config.host.isBlank()) {
-                    null // Listen on all interfaces
+                    null // Listen on all interfaces without blocking on interface resolution
                 } else {
-                    InetAddress.getByName(config.host)
+                    try {
+                        InetAddress.getByName(config.host)
+                    } catch (_: Exception) {
+                        null
+                    }
                 }
 
                 val socket = ServerSocket()
                 socket.reuseAddress = true
-                socket.bind(InetSocketAddress(bindAddr, config.port), 128)
+                socket.receiveBufferSize = 64 * 1024
+                socket.bind(InetSocketAddress(bindAddr, config.port), 256)
                 serverSocket = socket
 
                 _status.value = ServerStatus.RUNNING
-                Log.i(tag, "Proxy server listening on ${config.host}:${config.port}")
+                Log.i(tag, "Server listening on ${config.host}:${config.port}")
 
                 startStatsMonitor()
 
                 while (isActive && !socket.isClosed) {
                     try {
                         val clientSocket = socket.accept()
+                        // Configure high-performance socket options
+                        clientSocket.tcpNoDelay = true
+                        clientSocket.sendBufferSize = 64 * 1024
+                        clientSocket.receiveBufferSize = 64 * 1024
+                        clientSocket.soTimeout = 45000
+
                         handleClientConnection(clientSocket)
                     } catch (e: SocketException) {
                         if (socket.isClosed) break
@@ -137,7 +159,7 @@ class HttpProxyServer {
                 }
             } catch (e: Exception) {
                 Log.e(tag, "Failed to start proxy server: ${e.message}", e)
-                _errorMessage.value = e.localizedMessage ?: "Failed to start proxy server"
+                _errorMessage.value = e.localizedMessage ?: "Port ${config.port} unavailable"
                 _status.value = ServerStatus.ERROR
             } finally {
                 stopInternal()
@@ -180,9 +202,12 @@ class HttpProxyServer {
             var maxUp = _trafficStats.value.maxUpBps
             var maxDown = _trafficStats.value.maxDownBps
             val history = _trafficStats.value.history.toMutableList()
+            if (history.isEmpty()) {
+                history.addAll(initialHistory())
+            }
 
             while (isActive) {
-                delay(1000)
+                delay(800) // Smooth refresh rate
                 val upBytes = intervalSentBytes.getAndSet(0L)
                 val downBytes = intervalReceivedBytes.getAndSet(0L)
 
@@ -191,7 +216,7 @@ class HttpProxyServer {
 
                 val now = System.currentTimeMillis()
                 history.add(TrafficSample(now, upBytes, downBytes))
-                if (history.size > 40) {
+                while (history.size > 35) {
                     history.removeAt(0)
                 }
 
@@ -208,7 +233,6 @@ class HttpProxyServer {
                 _activeConnectionsCount.value = activeSocketCount.get()
                 _connectedClients.value = activeClientsMap.keys.toSet()
 
-                // Update 3 Hotspot user slots
                 updateSlotsState()
             }
         }
@@ -232,12 +256,13 @@ class HttpProxyServer {
                 val tracker = perClientMap[ip]
                 val activeSockets = activeClientsMap[ip] ?: 0
                 val speed = (tracker?.intervalBytes?.getAndSet(0L) ?: 0L)
+                val isRecent = (System.currentTimeMillis() - (tracker?.lastActiveTimestamp ?: 0L)) < 20000
                 slots.add(
                     ClientSlotStats(
                         slotIndex = i + 1,
                         clientIp = ip,
                         deviceLabel = defaultLabels[i],
-                        isConnected = activeSockets > 0 || (System.currentTimeMillis() - (tracker?.lastActiveTimestamp ?: 0L)) < 15000,
+                        isConnected = activeSockets > 0 || isRecent,
                         activeSockets = activeSockets,
                         bytesSent = tracker?.totalSent?.get() ?: 0L,
                         bytesReceived = tracker?.totalReceived?.get() ?: 0L,
@@ -250,7 +275,7 @@ class HttpProxyServer {
                 slots.add(
                     ClientSlotStats(
                         slotIndex = i + 1,
-                        clientIp = "Waiting for User ${i + 1}...",
+                        clientIp = "Waiting for connection...",
                         deviceLabel = defaultLabels[i],
                         isConnected = false,
                         activeSockets = 0,
@@ -283,7 +308,7 @@ class HttpProxyServer {
 
     private fun handleClientConnection(clientSocket: Socket) {
         serverScope.launch {
-            val clientIp = clientSocket.inetAddress?.hostAddress ?: "Unknown"
+            val clientIp = clientSocket.inetAddress?.hostAddress ?: "127.0.0.1"
             val sessionId = UUID.randomUUID().toString()
             val startTime = System.currentTimeMillis()
 
@@ -312,34 +337,42 @@ class HttpProxyServer {
             var errorDetail: String? = null
 
             try {
-                clientSocket.soTimeout = 30000
-                clientSocket.tcpNoDelay = true
+                val clientIn = clientSocket.getInputStream()
+                val clientOut = clientSocket.getOutputStream()
 
-                val clientIn = BufferedInputStream(clientSocket.getInputStream())
-                val clientOut = BufferedOutputStream(clientSocket.getOutputStream())
+                // Fast single-pass read for request headers
+                val headerBuffer = ByteArray(8192)
+                var headerLength = 0
+                var headerEnd = -1
 
-                val requestLine = readLine(clientIn) ?: return@launch
-                val parts = requestLine.trim().split(" ")
-                if (parts.size < 2) return@launch
-
-                method = parts[0].uppercase()
-                val targetUri = parts[1]
-
-                // Read headers
-                val headers = mutableListOf<String>()
-                var authHeader: String? = null
-                var line: String?
-                while (true) {
-                    line = readLine(clientIn)
-                    if (line.isNullOrBlank()) break
-                    headers.add(line)
-                    if (line.startsWith("Proxy-Authorization:", ignoreCase = true)) {
-                        authHeader = line.substringAfter(":").trim()
-                    }
+                while (headerEnd == -1 && headerLength < headerBuffer.size) {
+                    val read = clientIn.read(headerBuffer, headerLength, headerBuffer.size - headerLength)
+                    if (read == -1) break
+                    headerLength += read
+                    headerEnd = findHeaderEnd(headerBuffer, headerLength)
                 }
+
+                if (headerLength <= 0 || headerEnd == -1) {
+                    return@launch
+                }
+
+                val headerString = String(headerBuffer, 0, headerEnd, Charsets.US_ASCII)
+                val lines = headerString.split("\r\n")
+                if (lines.isEmpty()) return@launch
+
+                val requestLine = lines[0]
+                val reqParts = requestLine.trim().split(" ")
+                if (reqParts.size < 2) return@launch
+
+                method = reqParts[0].uppercase()
+                val targetUri = reqParts[1]
+                val protocol = if (reqParts.size > 2) reqParts[2] else "HTTP/1.1"
+
+                val headers = lines.subList(1, lines.size)
 
                 // Check Basic Authentication
                 if (currentConfig.authEnabled) {
+                    val authHeader = headers.find { it.startsWith("Proxy-Authorization:", ignoreCase = true) }?.substringAfter(":")?.trim()
                     val authorized = verifyAuth(authHeader)
                     if (!authorized) {
                         statusCode = 407
@@ -371,8 +404,10 @@ class HttpProxyServer {
                     try {
                         remoteSocket = Socket()
                         remoteSocket.tcpNoDelay = true
+                        remoteSocket.sendBufferSize = 64 * 1024
+                        remoteSocket.receiveBufferSize = 64 * 1024
                         remoteSocket.soTimeout = 60000
-                        remoteSocket.connect(InetSocketAddress(targetHost, targetPort), 15000)
+                        remoteSocket.connect(InetSocketAddress(targetHost, targetPort), 10000)
 
                         // Respond 200 Connection Established to client
                         val ack = "HTTP/1.1 200 Connection Established\r\n\r\n".toByteArray(Charsets.US_ASCII)
@@ -383,16 +418,26 @@ class HttpProxyServer {
                         intervalSentBytes.addAndGet(ack.size.toLong())
                         trackClientActivity(clientIp, ack.size.toLong(), 0L)
 
-                        // Pipe streams bidirectionally
-                        val remoteIn = BufferedInputStream(remoteSocket.getInputStream())
-                        val remoteOut = BufferedOutputStream(remoteSocket.getOutputStream())
+                        val remoteIn = remoteSocket.getInputStream()
+                        val remoteOut = remoteSocket.getOutputStream()
 
-                        val uploadJob = launch {
-                            val up = pipeStream(clientIn, remoteOut, isClientToRemote = true, clientIp = clientIp)
+                        // If any excess body bytes were read past the header end
+                        val excessBytes = headerLength - headerEnd
+                        if (excessBytes > 0) {
+                            remoteOut.write(headerBuffer, headerEnd, excessBytes)
+                            remoteOut.flush()
+                            sessionReceivedBytes += excessBytes
+                            totalReceivedBytes.addAndGet(excessBytes.toLong())
+                            intervalReceivedBytes.addAndGet(excessBytes.toLong())
+                            trackClientActivity(clientIp, 0L, excessBytes.toLong())
+                        }
+
+                        val uploadJob = launch(Dispatchers.IO) {
+                            val up = pipeStreamFast(clientIn, remoteOut, isClientToRemote = true, clientIp = clientIp)
                             sessionReceivedBytes += up
                         }
-                        val downloadJob = launch {
-                            val down = pipeStream(remoteIn, clientOut, isClientToRemote = false, clientIp = clientIp)
+                        val downloadJob = launch(Dispatchers.IO) {
+                            val down = pipeStreamFast(remoteIn, clientOut, isClientToRemote = false, clientIp = clientIp)
                             sessionSentBytes += down
                         }
 
@@ -422,24 +467,23 @@ class HttpProxyServer {
                     try {
                         remoteSocket = Socket()
                         remoteSocket.tcpNoDelay = true
+                        remoteSocket.sendBufferSize = 64 * 1024
+                        remoteSocket.receiveBufferSize = 64 * 1024
                         remoteSocket.soTimeout = 30000
-                        remoteSocket.connect(InetSocketAddress(targetHost, targetPort), 15000)
+                        remoteSocket.connect(InetSocketAddress(targetHost, targetPort), 10000)
 
-                        val remoteIn = BufferedInputStream(remoteSocket.getInputStream())
-                        val remoteOut = BufferedOutputStream(remoteSocket.getOutputStream())
+                        val remoteIn = remoteSocket.getInputStream()
+                        val remoteOut = remoteSocket.getOutputStream()
 
-                        // Reconstruct HTTP request line & headers
-                        val protocol = if (parts.size > 2) parts[2] else "HTTP/1.1"
-                        val newRequestLine = "$method $relativePath $protocol\r\n"
-                        val reqBytes = newRequestLine.toByteArray(Charsets.US_ASCII)
-                        remoteOut.write(reqBytes)
-                        var sentReq = reqBytes.size.toLong()
+                        // Reconstruct clean HTTP headers
+                        val sb = StringBuilder()
+                        sb.append("$method $relativePath $protocol\r\n")
 
                         var contentLength = 0L
-                        var isChunked = false
                         var hasHostHeader = false
 
                         for (h in headers) {
+                            if (h.isBlank()) continue
                             if (h.startsWith("Proxy-Authorization", ignoreCase = true) ||
                                 h.startsWith("Proxy-Connection", ignoreCase = true)
                             ) {
@@ -451,98 +495,55 @@ class HttpProxyServer {
                             if (h.startsWith("Content-Length:", ignoreCase = true)) {
                                 contentLength = h.substringAfter(":").trim().toLongOrNull() ?: 0L
                             }
-                            if (h.startsWith("Transfer-Encoding:", ignoreCase = true) && h.contains("chunked", ignoreCase = true)) {
-                                isChunked = true
-                            }
-                            val hBytes = "$h\r\n".toByteArray(Charsets.US_ASCII)
-                            remoteOut.write(hBytes)
-                            sentReq += hBytes.size
+                            sb.append(h).append("\r\n")
                         }
 
                         if (!hasHostHeader) {
-                            val hostHeader = "Host: $targetHost\r\n".toByteArray(Charsets.US_ASCII)
-                            remoteOut.write(hostHeader)
-                            sentReq += hostHeader.size
+                            sb.append("Host: ").append(targetHost).append("\r\n")
                         }
+                        sb.append("\r\n")
 
-                        remoteOut.write("\r\n".toByteArray(Charsets.US_ASCII))
-                        sentReq += 2
+                        val reqBytes = sb.toString().toByteArray(Charsets.US_ASCII)
+                        remoteOut.write(reqBytes)
 
+                        var sentReq = reqBytes.size.toLong()
                         totalReceivedBytes.addAndGet(sentReq)
                         intervalReceivedBytes.addAndGet(sentReq)
                         sessionReceivedBytes += sentReq
                         trackClientActivity(clientIp, 0L, sentReq)
 
-                        // If request has a body with Content-Length (POST/PUT/PATCH), forward it
+                        // Forward request body if present (POST / PUT / PATCH)
+                        val excessBytes = (headerLength - headerEnd).toLong()
+                        if (excessBytes > 0) {
+                            val toForward = Math.min(excessBytes, if (contentLength > 0) contentLength else excessBytes).toInt()
+                            remoteOut.write(headerBuffer, headerEnd, toForward)
+                            sessionReceivedBytes += toForward
+                            totalReceivedBytes.addAndGet(toForward.toLong())
+                            intervalReceivedBytes.addAndGet(toForward.toLong())
+                            trackClientActivity(clientIp, 0L, toForward.toLong())
+                            contentLength -= toForward
+                        }
+
                         if (contentLength > 0) {
-                            val buffer = ByteArray(8192)
+                            val buf = ByteArray(65536)
                             var remaining = contentLength
                             while (remaining > 0) {
-                                val toRead = Math.min(buffer.size.toLong(), remaining).toInt()
-                                val read = clientIn.read(buffer, 0, toRead)
-                                if (read == -1) break
-                                remoteOut.write(buffer, 0, read)
-                                remaining -= read
-                                sessionReceivedBytes += read
-                                totalReceivedBytes.addAndGet(read.toLong())
-                                intervalReceivedBytes.addAndGet(read.toLong())
-                                trackClientActivity(clientIp, 0L, read.toLong())
-                            }
-                        } else if (isChunked) {
-                            // Forward chunked request body
-                            while (true) {
-                                val chunkHeader = readLine(clientIn) ?: break
-                                val chunkHeaderBytes = "$chunkHeader\r\n".toByteArray(Charsets.US_ASCII)
-                                remoteOut.write(chunkHeaderBytes)
-                                totalReceivedBytes.addAndGet(chunkHeaderBytes.size.toLong())
-                                intervalReceivedBytes.addAndGet(chunkHeaderBytes.size.toLong())
-                                sessionReceivedBytes += chunkHeaderBytes.size
-                                trackClientActivity(clientIp, 0L, chunkHeaderBytes.size.toLong())
-
-                                val chunkSizeHex = chunkHeader.substringBefore(";").trim()
-                                val chunkSize = try { chunkSizeHex.toInt(16) } catch (_: Exception) { 0 }
-
-                                if (chunkSize > 0) {
-                                    val buffer = ByteArray(8192)
-                                    var remaining = chunkSize
-                                    while (remaining > 0) {
-                                        val toRead = Math.min(buffer.size, remaining)
-                                        val read = clientIn.read(buffer, 0, toRead)
-                                        if (read == -1) break
-                                        remoteOut.write(buffer, 0, read)
-                                        remaining -= read
-                                        sessionReceivedBytes += read
-                                        totalReceivedBytes.addAndGet(read.toLong())
-                                        intervalReceivedBytes.addAndGet(read.toLong())
-                                        trackClientActivity(clientIp, 0L, read.toLong())
-                                    }
-                                    // Read and forward CRLF after chunk data
-                                    val crlf = readLine(clientIn)
-                                    val crlfBytes = "\r\n".toByteArray(Charsets.US_ASCII)
-                                    remoteOut.write(crlfBytes)
-                                    totalReceivedBytes.addAndGet(2)
-                                    intervalReceivedBytes.addAndGet(2)
-                                    sessionReceivedBytes += 2
-                                } else {
-                                    // Final chunk (chunkSize == 0): read trailing headers if any
-                                    while (true) {
-                                        val trailer = readLine(clientIn)
-                                        val trailerBytes = if (trailer.isNullOrBlank()) "\r\n".toByteArray(Charsets.US_ASCII) else "$trailer\r\n".toByteArray(Charsets.US_ASCII)
-                                        remoteOut.write(trailerBytes)
-                                        totalReceivedBytes.addAndGet(trailerBytes.size.toLong())
-                                        intervalReceivedBytes.addAndGet(trailerBytes.size.toLong())
-                                        sessionReceivedBytes += trailerBytes.size
-                                        if (trailer.isNullOrBlank()) break
-                                    }
-                                    break
-                                }
+                                val toRead = Math.min(buf.size.toLong(), remaining).toInt()
+                                val r = clientIn.read(buf, 0, toRead)
+                                if (r == -1) break
+                                remoteOut.write(buf, 0, r)
+                                remaining -= r
+                                sessionReceivedBytes += r
+                                totalReceivedBytes.addAndGet(r.toLong())
+                                intervalReceivedBytes.addAndGet(r.toLong())
+                                trackClientActivity(clientIp, 0L, r.toLong())
                             }
                         }
 
                         remoteOut.flush()
 
-                        // Stream remote response back to client
-                        val down = pipeStream(remoteIn, clientOut, isClientToRemote = false, clientIp = clientIp)
+                        // Stream remote response back to client directly
+                        val down = pipeStreamFast(remoteIn, clientOut, isClientToRemote = false, clientIp = clientIp)
                         sessionSentBytes += down
                     } catch (e: Exception) {
                         statusCode = 502
@@ -599,58 +600,52 @@ class HttpProxyServer {
         }
     }
 
-    private fun pipeStream(input: InputStream, output: OutputStream, isClientToRemote: Boolean, clientIp: String): Long {
-        val buffer = ByteArray(32768)
+    /**
+     * Ultra-fast direct 64KB stream piping without redundant flushing or conversion overhead.
+     */
+    private fun pipeStreamFast(input: InputStream, output: OutputStream, isClientToRemote: Boolean, clientIp: String): Long {
+        val buffer = ByteArray(65536)
         var totalBytes = 0L
         try {
             while (true) {
-                val read = input.read(buffer)
+                val read = input.read(buffer, 0, buffer.size)
                 if (read == -1) break
                 output.write(buffer, 0, read)
-                output.flush()
                 totalBytes += read
 
+                val count = read.toLong()
                 if (isClientToRemote) {
-                    totalReceivedBytes.addAndGet(read.toLong())
-                    intervalReceivedBytes.addAndGet(read.toLong())
-                    trackClientActivity(clientIp, 0L, read.toLong())
+                    totalReceivedBytes.addAndGet(count)
+                    intervalReceivedBytes.addAndGet(count)
+                    trackClientActivity(clientIp, 0L, count)
                 } else {
-                    totalSentBytes.addAndGet(read.toLong())
-                    intervalSentBytes.addAndGet(read.toLong())
-                    trackClientActivity(clientIp, read.toLong(), 0L)
+                    totalSentBytes.addAndGet(count)
+                    intervalSentBytes.addAndGet(count)
+                    trackClientActivity(clientIp, count, 0L)
                 }
             }
+            output.flush()
         } catch (_: SocketException) {
-            // Normal connection teardown
+            // Socket closed normally by client or remote
         } catch (_: SocketTimeoutException) {
-            // Normal idle socket close
+            // Idle timeout
         } catch (e: Exception) {
-            Log.d(tag, "Pipe stream exception: ${e.message}")
+            Log.d(tag, "Pipe stream ended: ${e.message}")
         }
         return totalBytes
     }
 
-    private fun readLine(input: InputStream): String? {
-        val baos = ByteArrayOutputStream()
-        var prev = -1
-        while (true) {
-            val curr = input.read()
-            if (curr == -1) {
-                return if (baos.size() == 0) null else baos.toString("US-ASCII")
-            }
-            if (curr == '\n'.code) {
-                if (prev == '\r'.code) {
-                    val bytes = baos.toByteArray()
-                    return String(bytes, 0, bytes.size - 1, Charsets.US_ASCII)
-                }
-                return baos.toString("US-ASCII")
-            }
-            baos.write(curr)
-            prev = curr
-            if (baos.size() > 8192) {
-                return baos.toString("US-ASCII")
+    private fun findHeaderEnd(buf: ByteArray, length: Int): Int {
+        for (i in 0 until length - 3) {
+            if (buf[i] == '\r'.code.toByte() &&
+                buf[i + 1] == '\n'.code.toByte() &&
+                buf[i + 2] == '\r'.code.toByte() &&
+                buf[i + 3] == '\n'.code.toByte()
+            ) {
+                return i + 4
             }
         }
+        return -1
     }
 
     private fun verifyAuth(authHeader: String?): Boolean {
@@ -684,7 +679,6 @@ class HttpProxyServer {
             return Triple(host, port, path)
         }
 
-        // Relative URI - read from Host header
         val hostHeader = headers.find { it.startsWith("Host:", ignoreCase = true) }
         if (hostHeader != null) {
             val hostValue = hostHeader.substringAfter(":").trim()
@@ -723,7 +717,7 @@ class HttpProxyServer {
         synchronized(clientSlotOrder) {
             clientSlotOrder.clear()
         }
-        _trafficStats.value = TrafficStats()
+        _trafficStats.value = TrafficStats(history = initialHistory())
         _clientSlots.value = defaultSlots()
     }
 }

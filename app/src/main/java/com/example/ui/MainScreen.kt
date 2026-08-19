@@ -16,17 +16,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Cable
-import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.DesktopWindows
 import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.MoreVert
@@ -35,9 +31,8 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Router
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Usb
 import androidx.compose.material.icons.filled.WifiTethering
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -65,35 +60,23 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.example.model.ControlMode
 import com.example.model.InterfaceType
-import com.example.model.ServerStatus
 import com.example.model.ThemeMode
-import com.example.ui.components.ControlModeSegmentedSwitch
-import com.example.ui.components.HotspotMultiUserCard
-import com.example.ui.components.IpAddressesCard
-import com.example.ui.components.NaturalHeroCard
-import com.example.ui.components.NaturalRecentActivityCard
-import com.example.ui.components.NaturalStatsGrid
-import com.example.ui.components.NaturalTrafficGraphCard
 import com.example.ui.components.ProxySettingsDialog
 import com.example.ui.components.SessionLogsDialog
 import com.example.ui.components.TestProxyDialog
-import com.example.ui.components.UsbSingleUserCard
 import com.example.ui.components.WindowsSetupGuideDialog
+import com.example.ui.pages.HotspotMultiUserPage
+import com.example.ui.pages.LogsPage
+import com.example.ui.pages.UsbTetheringPage
+import com.example.ui.pages.WindowsSetupPage
 import com.example.ui.theme.NaturalGreenSuccess
-import com.example.ui.theme.NaturalRedError
-import com.example.ui.theme.NaturalRedTint
-import com.example.ui.theme.NaturalTextMuted
-import com.example.ui.theme.NaturalTextPrimary
-import com.example.ui.theme.NaturalTextSecondary
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(viewModel: ProxyViewModel) {
     val config by viewModel.config.collectAsStateWithLifecycle()
     val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
-    val controlMode by viewModel.controlMode.collectAsStateWithLifecycle()
     val serverStatus by viewModel.serverStatus.collectAsStateWithLifecycle()
     val errorMessage by viewModel.errorMessage.collectAsStateWithLifecycle()
     val trafficStats by viewModel.trafficStats.collectAsStateWithLifecycle()
@@ -106,7 +89,7 @@ fun MainScreen(viewModel: ProxyViewModel) {
     val testResult by viewModel.testResult.collectAsStateWithLifecycle()
     val uptimeSeconds by viewModel.uptimeSeconds.collectAsStateWithLifecycle()
 
-    var currentNavTab by remember { mutableIntStateOf(0) } // 0: Control, 1: Logs, 2: Setup
+    var currentNavTab by remember { mutableIntStateOf(0) } // 0: USB, 1: Hotspot, 2: Logs, 3: Setup
 
     var showSettingsDialog by remember { mutableStateOf(false) }
     var showWindowsGuideDialog by remember { mutableStateOf(false) }
@@ -125,15 +108,10 @@ fun MainScreen(viewModel: ProxyViewModel) {
         }
     }
 
-    val suggestedIp = remember(networkInterfaces) {
+    val suggestedUsbIp = remember(networkInterfaces) {
         networkInterfaces.find { it.type == InterfaceType.USB_TETHERING }?.ipAddress
-            ?: networkInterfaces.find { it.type == InterfaceType.WIFI_HOTSPOT }?.ipAddress
             ?: networkInterfaces.find { it.type == InterfaceType.WIFI }?.ipAddress
             ?: "192.168.42.129"
-    }
-
-    val hotspotGatewayIp = remember(networkInterfaces) {
-        networkInterfaces.find { it.type == InterfaceType.WIFI_HOTSPOT }?.ipAddress ?: "192.168.43.1"
     }
 
     Scaffold(
@@ -150,22 +128,46 @@ fun MainScreen(viewModel: ProxyViewModel) {
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
-                                imageVector = Icons.Default.Router,
+                                imageVector = when (currentNavTab) {
+                                    0 -> Icons.Default.Usb
+                                    1 -> Icons.Default.WifiTethering
+                                    2 -> Icons.Default.History
+                                    else -> Icons.Default.DesktopWindows
+                                },
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.size(22.dp)
                             )
                         }
                         Spacer(modifier = Modifier.width(12.dp))
-                        Text(
-                            text = "Relay Proxy",
-                            style = MaterialTheme.typography.titleLarge.copy(
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.onBackground,
-                                fontSize = 20.sp,
-                                letterSpacing = (-0.5).sp
+                        Column {
+                            Text(
+                                text = when (currentNavTab) {
+                                    0 -> "USB Tethering Proxy"
+                                    1 -> "Wi-Fi Hotspot Proxy"
+                                    2 -> "Session Traffic Logs"
+                                    else -> "Windows Setup Guide"
+                                },
+                                style = MaterialTheme.typography.titleMedium.copy(
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onBackground,
+                                    fontSize = 17.sp,
+                                    letterSpacing = (-0.3).sp
+                                )
                             )
-                        )
+                            Text(
+                                text = when (currentNavTab) {
+                                    0 -> "Direct high-speed PC connection"
+                                    1 -> "Up to 3 Hotspot Users"
+                                    2 -> "${sessionLogs.size} total requests recorded"
+                                    else -> "PC & CLI configurations"
+                                },
+                                style = MaterialTheme.typography.bodySmall.copy(
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontSize = 11.sp
+                                )
+                            )
+                        }
                     }
                 },
                 actions = {
@@ -183,7 +185,7 @@ fun MainScreen(viewModel: ProxyViewModel) {
 
                     // Setup & Info Button
                     IconButton(
-                        onClick = { showWindowsGuideDialog = true },
+                        onClick = { currentNavTab = 3 },
                         modifier = Modifier.testTag("open_guide_icon_button")
                     ) {
                         Icon(
@@ -254,16 +256,6 @@ fun MainScreen(viewModel: ProxyViewModel) {
                                 }
                             )
                             DropdownMenuItem(
-                                text = { Text("Open Wi-Fi Hotspot Settings", color = MaterialTheme.colorScheme.onSurface) },
-                                leadingIcon = {
-                                    Icon(Icons.Default.WifiTethering, contentDescription = null, tint = NaturalGreenSuccess)
-                                },
-                                onClick = {
-                                    showOptionsMenu = false
-                                    viewModel.openHotspotSettings()
-                                }
-                            )
-                            DropdownMenuItem(
                                 text = { Text("Open USB Tethering Settings", color = MaterialTheme.colorScheme.onSurface) },
                                 leadingIcon = {
                                     Icon(Icons.Default.Cable, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -271,6 +263,16 @@ fun MainScreen(viewModel: ProxyViewModel) {
                                 onClick = {
                                     showOptionsMenu = false
                                     viewModel.openTetheringSettings()
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Open Wi-Fi Hotspot Settings", color = MaterialTheme.colorScheme.onSurface) },
+                                leadingIcon = {
+                                    Icon(Icons.Default.WifiTethering, contentDescription = null, tint = NaturalGreenSuccess)
+                                },
+                                onClick = {
+                                    showOptionsMenu = false
+                                    viewModel.openHotspotSettings()
                                 }
                             )
                         }
@@ -283,110 +285,71 @@ fun MainScreen(viewModel: ProxyViewModel) {
             )
         },
         bottomBar = {
-            NaturalBottomNavBar(
+            FourTabBottomNavBar(
                 selectedTab = currentNavTab,
-                onTabSelect = { tabIndex ->
-                    currentNavTab = tabIndex
-                    when (tabIndex) {
-                        1 -> showSessionLogsDialog = true
-                        2 -> showWindowsGuideDialog = true
-                    }
-                }
+                onTabSelect = { tabIndex -> currentNavTab = tabIndex },
+                hotspotActiveCount = clientSlots.count { it.isConnected }
             )
         }
     ) { innerPadding ->
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .padding(horizontal = 16.dp)
-                .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            Spacer(modifier = Modifier.height(2.dp))
+            when (currentNavTab) {
+                0 -> UsbTetheringPage(
+                    serverStatus = serverStatus,
+                    errorMessage = errorMessage,
+                    config = config,
+                    suggestedIp = suggestedUsbIp,
+                    uptimeSeconds = uptimeSeconds,
+                    trafficStats = trafficStats,
+                    activeConnections = activeConnections,
+                    connectedClients = connectedClients,
+                    sessionLogs = sessionLogs,
+                    networkInterfaces = networkInterfaces,
+                    onToggleServer = { viewModel.toggleServer() },
+                    onOpenSettings = { showSettingsDialog = true },
+                    onOpenTetherSettings = { viewModel.openTetheringSettings() },
+                    onOpenSessionLogs = { currentNavTab = 2 },
+                    onOpenWindowsGuide = { currentNavTab = 3 },
+                    onCopy = { label, text -> viewModel.copyToClipboard(label, text) }
+                )
 
-            // Error banner if any
-            if (serverStatus == ServerStatus.ERROR && errorMessage != null) {
-                Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    color = NaturalRedTint,
-                    border = androidx.compose.foundation.BorderStroke(1.dp, NaturalRedError.copy(alpha = 0.5f)),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        text = "Error: $errorMessage",
-                        color = NaturalRedError,
-                        style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
-                        modifier = Modifier.padding(14.dp)
-                    )
-                }
-            }
-
-            // 1. Hero Active State Card with Obvious Start / Stop Button & Indicator
-            NaturalHeroCard(
-                status = serverStatus,
-                config = config,
-                suggestedIp = suggestedIp,
-                uptimeSeconds = uptimeSeconds,
-                onToggleServer = { viewModel.toggleServer() },
-                onOpenSettings = { showSettingsDialog = true }
-            )
-
-            // 2. Control Mode Switcher: USB (Single PC) vs Hotspot (3 Users)
-            ControlModeSegmentedSwitch(
-                currentMode = controlMode,
-                onModeChange = { viewModel.setControlMode(it) },
-                activeHotspotUsersCount = clientSlots.count { it.isConnected }
-            )
-
-            // 3. Conditional Mode Views:
-            if (controlMode == ControlMode.HOTSPOT_MULTI_USER) {
-                // Multi-User Hotspot Card with 3 compact sub-tabs and traffic info per user
-                HotspotMultiUserCard(
+                1 -> HotspotMultiUserPage(
+                    serverStatus = serverStatus,
+                    errorMessage = errorMessage,
+                    config = config,
+                    uptimeSeconds = uptimeSeconds,
+                    trafficStats = trafficStats,
+                    activeConnections = activeConnections,
+                    connectedClients = connectedClients,
                     clientSlots = clientSlots,
-                    gatewayIp = hotspotGatewayIp,
+                    sessionLogs = sessionLogs,
+                    networkInterfaces = networkInterfaces,
+                    onToggleServer = { viewModel.toggleServer() },
+                    onOpenSettings = { showSettingsDialog = true },
+                    onOpenHotspotSettings = { viewModel.openHotspotSettings() },
+                    onOpenSessionLogs = { currentNavTab = 2 },
+                    onOpenWindowsGuide = { currentNavTab = 3 },
+                    onCopy = { label, text -> viewModel.copyToClipboard(label, text) }
+                )
+
+                2 -> LogsPage(
+                    sessionLogs = sessionLogs,
+                    onClearLogs = { viewModel.clearLogs() },
+                    onCopy = { label, text -> viewModel.copyToClipboard(label, text) }
+                )
+
+                3 -> WindowsSetupPage(
                     port = config.port,
+                    interfaces = networkInterfaces,
                     onCopy = { label, text -> viewModel.copyToClipboard(label, text) },
+                    onOpenTetherSettings = { viewModel.openTetheringSettings() },
                     onOpenHotspotSettings = { viewModel.openHotspotSettings() }
                 )
-            } else {
-                // USB Single User Card with USB Tethering IP
-                UsbSingleUserCard(
-                    suggestedIp = suggestedIp,
-                    port = config.port,
-                    onCopy = { label, text -> viewModel.copyToClipboard(label, text) },
-                    onOpenTetherSettings = { viewModel.openTetheringSettings() }
-                )
             }
-
-            // 4. Data Sent & Data Received 2-Column Stats Cards
-            NaturalStatsGrid(stats = trafficStats)
-
-            // 5. Traffic Waveform Canvas
-            NaturalTrafficGraphCard(stats = trafficStats)
-
-            // 6. IP Addresses Card (USB Tethering, Wi-Fi Hotspot, Wi-Fi)
-            IpAddressesCard(
-                interfaces = networkInterfaces,
-                port = config.port,
-                onCopy = { label, text -> viewModel.copyToClipboard(label, text) },
-                onOpenHotspotSettings = { viewModel.openHotspotSettings() }
-            )
-
-            // 7. Recent Activity Card
-            NaturalRecentActivityCard(
-                sessionLogsCount = sessionLogs.size,
-                activeConnections = activeConnections,
-                connectedDevicesCount = connectedClients.size,
-                onOpenSessionLogs = { showSessionLogsDialog = true }
-            )
-
-            // 8. Windows PC USB & Wi-Fi Hotspot Setup Quick Banner
-            WindowsSetupBannerNatural(
-                onClick = { showWindowsGuideDialog = true }
-            )
-
-            Spacer(modifier = Modifier.height(24.dp))
         }
     }
 
@@ -411,10 +374,7 @@ fun MainScreen(viewModel: ProxyViewModel) {
         WindowsSetupGuideDialog(
             port = config.port,
             interfaces = networkInterfaces,
-            onDismiss = {
-                showWindowsGuideDialog = false
-                if (currentNavTab == 2) currentNavTab = 0
-            },
+            onDismiss = { showWindowsGuideDialog = false },
             onCopy = { label, text -> viewModel.copyToClipboard(label, text) },
             onOpenTetherSettings = { viewModel.openHotspotSettings() }
         )
@@ -423,10 +383,7 @@ fun MainScreen(viewModel: ProxyViewModel) {
     if (showSessionLogsDialog) {
         SessionLogsDialog(
             logs = sessionLogs,
-            onDismiss = {
-                showSessionLogsDialog = false
-                if (currentNavTab == 1) currentNavTab = 0
-            },
+            onDismiss = { showSessionLogsDialog = false },
             onClearLogs = { viewModel.clearLogs() }
         )
     }
@@ -446,9 +403,10 @@ fun MainScreen(viewModel: ProxyViewModel) {
 }
 
 @Composable
-fun NaturalBottomNavBar(
+fun FourTabBottomNavBar(
     selectedTab: Int,
-    onTabSelect: (Int) -> Unit
+    onTabSelect: (Int) -> Unit,
+    hotspotActiveCount: Int
 ) {
     Surface(
         color = MaterialTheme.colorScheme.surface,
@@ -458,45 +416,56 @@ fun NaturalBottomNavBar(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 24.dp, vertical = 8.dp),
+                .padding(horizontal = 12.dp, vertical = 6.dp),
             horizontalArrangement = Arrangement.SpaceAround,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            NavTabItem(
-                title = "Control",
-                icon = Icons.Default.Home,
+            FourNavTabItem(
+                title = "USB",
+                icon = Icons.Default.Usb,
+                badgeText = null,
                 isSelected = selectedTab == 0,
                 onClick = { onTabSelect(0) }
             )
-            NavTabItem(
-                title = "Logs",
-                icon = Icons.Default.History,
+            FourNavTabItem(
+                title = "Hotspot (3)",
+                icon = Icons.Default.WifiTethering,
+                badgeText = if (hotspotActiveCount > 0) "$hotspotActiveCount" else null,
                 isSelected = selectedTab == 1,
                 onClick = { onTabSelect(1) }
             )
-            NavTabItem(
-                title = "Setup",
-                icon = Icons.Default.Settings,
+            FourNavTabItem(
+                title = "Logs",
+                icon = Icons.Default.History,
+                badgeText = null,
                 isSelected = selectedTab == 2,
                 onClick = { onTabSelect(2) }
+            )
+            FourNavTabItem(
+                title = "Setup",
+                icon = Icons.Default.DesktopWindows,
+                badgeText = null,
+                isSelected = selectedTab == 3,
+                onClick = { onTabSelect(3) }
             )
         }
     }
 }
 
 @Composable
-fun NavTabItem(
+fun FourNavTabItem(
     title: String,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
+    badgeText: String?,
     isSelected: Boolean,
     onClick: () -> Unit
 ) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
-            .clip(CircleShape)
+            .clip(RoundedCornerShape(16.dp))
             .clickable { onClick() }
-            .padding(horizontal = 12.dp, vertical = 4.dp)
+            .padding(horizontal = 10.dp, vertical = 4.dp)
     ) {
         Box(
             modifier = Modifier
@@ -504,15 +473,33 @@ fun NavTabItem(
                     if (isSelected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
                     RoundedCornerShape(20.dp)
                 )
-                .padding(horizontal = 18.dp, vertical = 4.dp),
+                .padding(horizontal = 14.dp, vertical = 4.dp),
             contentAlignment = Alignment.Center
         ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = title,
-                tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(20.dp)
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = title,
+                    tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp)
+                )
+                if (badgeText != null) {
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Box(
+                        modifier = Modifier
+                            .background(NaturalGreenSuccess, CircleShape)
+                            .padding(horizontal = 5.dp, vertical = 1.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = badgeText,
+                            color = Color.White,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
         }
         Spacer(modifier = Modifier.height(2.dp))
         Text(
@@ -523,76 +510,5 @@ fun NavTabItem(
                 color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
             )
         )
-    }
-}
-
-@Composable
-fun WindowsSetupBannerNatural(
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Card(
-        modifier = modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(24.dp))
-            .clickable { onClick() }
-            .testTag("windows_setup_banner"),
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.weight(1f)
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(40.dp)
-                        .background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(12.dp)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.DesktopWindows,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(22.dp)
-                    )
-                }
-
-                Spacer(modifier = Modifier.width(14.dp))
-
-                Column {
-                    Text(
-                        text = "Windows PC Proxy Setup",
-                        style = MaterialTheme.typography.bodyMedium.copy(
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            fontSize = 14.sp
-                        )
-                    )
-                    Text(
-                        text = "USB Tethering • Wi-Fi Hotspot (Up to 3 Users)",
-                        style = MaterialTheme.typography.bodySmall.copy(
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 12.sp
-                        )
-                    )
-                }
-            }
-
-            Icon(
-                imageVector = Icons.Default.ChevronRight,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(20.dp)
-            )
-        }
     }
 }

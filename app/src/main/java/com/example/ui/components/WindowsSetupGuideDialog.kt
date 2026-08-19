@@ -414,7 +414,7 @@ private fun CliAndGitGuide(
 }
 
 @Composable
-private fun StepHeader(step: Int, title: String) {
+fun StepHeader(step: Int, title: String) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Surface(
             shape = RoundedCornerShape(6.dp),
@@ -443,7 +443,7 @@ private fun StepHeader(step: Int, title: String) {
 }
 
 @Composable
-private fun CodeSnippetBox(
+fun CodeSnippetBox(
     code: String,
     onCopy: () -> Unit
 ) {
