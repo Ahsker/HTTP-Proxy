@@ -131,7 +131,7 @@ class HttpProxyServer(val serverName: String = "ProxyServer") {
 
                 val socket = ServerSocket()
                 socket.reuseAddress = true
-                socket.receiveBufferSize = 64 * 1024
+                socket.receiveBufferSize = 256 * 1024
                 socket.bind(InetSocketAddress(bindAddr, config.port), 256)
                 serverSocket = socket
 
@@ -145,8 +145,11 @@ class HttpProxyServer(val serverName: String = "ProxyServer") {
                         val clientSocket = socket.accept()
                         // Configure high-performance socket options
                         clientSocket.tcpNoDelay = true
-                        clientSocket.sendBufferSize = 64 * 1024
-                        clientSocket.receiveBufferSize = 64 * 1024
+                        clientSocket.sendBufferSize = 256 * 1024
+                        clientSocket.receiveBufferSize = 256 * 1024
+                        try {
+                            clientSocket.trafficClass = 0x10 // IPTOS_LOWDELAY
+                        } catch (_: Exception) {}
                         clientSocket.soTimeout = 45000
 
                         handleClientConnection(clientSocket)
@@ -405,8 +408,11 @@ class HttpProxyServer(val serverName: String = "ProxyServer") {
                     try {
                         remoteSocket = Socket()
                         remoteSocket.tcpNoDelay = true
-                        remoteSocket.sendBufferSize = 64 * 1024
-                        remoteSocket.receiveBufferSize = 64 * 1024
+                        remoteSocket.sendBufferSize = 256 * 1024
+                        remoteSocket.receiveBufferSize = 256 * 1024
+                        try {
+                            remoteSocket.trafficClass = 0x10 // IPTOS_LOWDELAY
+                        } catch (_: Exception) {}
                         remoteSocket.soTimeout = 60000
                         remoteSocket.connect(InetSocketAddress(targetHost, targetPort), 10000)
 
@@ -468,8 +474,11 @@ class HttpProxyServer(val serverName: String = "ProxyServer") {
                     try {
                         remoteSocket = Socket()
                         remoteSocket.tcpNoDelay = true
-                        remoteSocket.sendBufferSize = 64 * 1024
-                        remoteSocket.receiveBufferSize = 64 * 1024
+                        remoteSocket.sendBufferSize = 256 * 1024
+                        remoteSocket.receiveBufferSize = 256 * 1024
+                        try {
+                            remoteSocket.trafficClass = 0x10 // IPTOS_LOWDELAY
+                        } catch (_: Exception) {}
                         remoteSocket.soTimeout = 30000
                         remoteSocket.connect(InetSocketAddress(targetHost, targetPort), 10000)
 
@@ -507,7 +516,7 @@ class HttpProxyServer(val serverName: String = "ProxyServer") {
                         val reqBytes = sb.toString().toByteArray(Charsets.US_ASCII)
                         remoteOut.write(reqBytes)
 
-                        var sentReq = reqBytes.size.toLong()
+                        val sentReq = reqBytes.size.toLong()
                         totalReceivedBytes.addAndGet(sentReq)
                         intervalReceivedBytes.addAndGet(sentReq)
                         sessionReceivedBytes += sentReq
@@ -528,6 +537,7 @@ class HttpProxyServer(val serverName: String = "ProxyServer") {
                         if (contentLength > 0) {
                             val buf = ByteArray(65536)
                             var remaining = contentLength
+                            var uncommitted = 0L
                             while (remaining > 0) {
                                 val toRead = Math.min(buf.size.toLong(), remaining).toInt()
                                 val r = clientIn.read(buf, 0, toRead)
@@ -535,9 +545,18 @@ class HttpProxyServer(val serverName: String = "ProxyServer") {
                                 remoteOut.write(buf, 0, r)
                                 remaining -= r
                                 sessionReceivedBytes += r
-                                totalReceivedBytes.addAndGet(r.toLong())
-                                intervalReceivedBytes.addAndGet(r.toLong())
-                                trackClientActivity(clientIp, 0L, r.toLong())
+                                uncommitted += r
+                                if (uncommitted >= 1024 * 1024L) {
+                                    totalReceivedBytes.addAndGet(uncommitted)
+                                    intervalReceivedBytes.addAndGet(uncommitted)
+                                    trackClientActivity(clientIp, 0L, uncommitted)
+                                    uncommitted = 0L
+                                }
+                            }
+                            if (uncommitted > 0) {
+                                totalReceivedBytes.addAndGet(uncommitted)
+                                intervalReceivedBytes.addAndGet(uncommitted)
+                                trackClientActivity(clientIp, 0L, uncommitted)
                             }
                         }
 
@@ -602,27 +621,25 @@ class HttpProxyServer(val serverName: String = "ProxyServer") {
     }
 
     /**
-     * Ultra-fast direct 64KB stream piping without redundant flushing or conversion overhead.
+     * Ultra-fast direct 64KB stream piping without redundant intermediate buffer copies.
+     * Batches atomic stat tracking and Map lookups every ~1MB to eliminate thread contention and cache bouncing.
      */
     private fun pipeStreamFast(input: InputStream, output: OutputStream, isClientToRemote: Boolean, clientIp: String): Long {
         val buffer = ByteArray(65536)
         var totalBytes = 0L
+        var uncommittedBytes = 0L
+        val batchThreshold = 1024 * 1024L // 1MB batch window
         try {
             while (true) {
                 val read = input.read(buffer, 0, buffer.size)
                 if (read == -1) break
                 output.write(buffer, 0, read)
                 totalBytes += read
+                uncommittedBytes += read
 
-                val count = read.toLong()
-                if (isClientToRemote) {
-                    totalReceivedBytes.addAndGet(count)
-                    intervalReceivedBytes.addAndGet(count)
-                    trackClientActivity(clientIp, 0L, count)
-                } else {
-                    totalSentBytes.addAndGet(count)
-                    intervalSentBytes.addAndGet(count)
-                    trackClientActivity(clientIp, count, 0L)
+                if (uncommittedBytes >= batchThreshold) {
+                    flushStats(isClientToRemote, clientIp, uncommittedBytes)
+                    uncommittedBytes = 0L
                 }
             }
             output.flush()
@@ -632,8 +649,25 @@ class HttpProxyServer(val serverName: String = "ProxyServer") {
             // Idle timeout
         } catch (e: Exception) {
             Log.d(tag, "Pipe stream ended: ${e.message}")
+        } finally {
+            if (uncommittedBytes > 0) {
+                flushStats(isClientToRemote, clientIp, uncommittedBytes)
+            }
         }
         return totalBytes
+    }
+
+    private fun flushStats(isClientToRemote: Boolean, clientIp: String, count: Long) {
+        if (count <= 0) return
+        if (isClientToRemote) {
+            totalReceivedBytes.addAndGet(count)
+            intervalReceivedBytes.addAndGet(count)
+            trackClientActivity(clientIp, 0L, count)
+        } else {
+            totalSentBytes.addAndGet(count)
+            intervalSentBytes.addAndGet(count)
+            trackClientActivity(clientIp, count, 0L)
+        }
     }
 
     private fun findHeaderEnd(buf: ByteArray, length: Int): Int {
