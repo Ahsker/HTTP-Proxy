@@ -35,7 +35,7 @@ object NetworkUtils {
                             InterfaceType.WIFI_HOTSPOT -> "Wi-Fi Hotspot (${intf.name})"
                             InterfaceType.WIFI -> "Wi-Fi (${intf.name})"
                             InterfaceType.MOBILE -> "Mobile Data (${intf.name})"
-                            InterfaceType.LOOPBACK -> "Loopback / ADB (${intf.name})"
+                            InterfaceType.LOOPBACK -> "Local Loopback (${intf.name})"
                             InterfaceType.ETHERNET -> "Ethernet (${intf.name})"
                             InterfaceType.OTHER -> intf.displayName ?: intf.name
                         }
@@ -61,7 +61,7 @@ object NetworkUtils {
             result.add(
                 NetworkInterfaceInfo(
                     name = "lo",
-                    displayName = "Loopback / ADB (lo)",
+                    displayName = "Local Loopback (lo)",
                     ipAddress = "127.0.0.1",
                     type = InterfaceType.LOOPBACK,
                     isPreferredForWindows = true

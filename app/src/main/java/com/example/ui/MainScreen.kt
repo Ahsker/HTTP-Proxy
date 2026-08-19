@@ -350,7 +350,7 @@ fun MainScreen(viewModel: ProxyViewModel) {
                     onOpenHotspotSettings = { viewModel.openHotspotSettings() }
                 )
             } else {
-                // USB Single User Card with ADB Reverse and USB Tethering IP
+                // USB Single User Card with USB Tethering IP
                 UsbSingleUserCard(
                     suggestedIp = suggestedIp,
                     port = config.port,
@@ -365,7 +365,7 @@ fun MainScreen(viewModel: ProxyViewModel) {
             // 5. Traffic Waveform Canvas
             NaturalTrafficGraphCard(stats = trafficStats)
 
-            // 6. IP Addresses Card (USB, Wi-Fi Hotspot, Wi-Fi, ADB)
+            // 6. IP Addresses Card (USB Tethering, Wi-Fi Hotspot, Wi-Fi)
             IpAddressesCard(
                 interfaces = networkInterfaces,
                 port = config.port,
@@ -578,7 +578,7 @@ fun WindowsSetupBannerNatural(
                         )
                     )
                     Text(
-                        text = "USB Tethering • Wi-Fi Hotspot • ADB Reverse",
+                        text = "USB Tethering • Wi-Fi Hotspot (Up to 3 Users)",
                         style = MaterialTheme.typography.bodySmall.copy(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             fontSize = 12.sp

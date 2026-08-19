@@ -532,8 +532,6 @@ fun UsbSingleUserCard(
     onOpenTetherSettings: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val adbCmd = "adb reverse tcp:$port tcp:$port"
-
     Card(
         modifier = modifier
             .fillMaxWidth()
@@ -565,7 +563,7 @@ fun UsbSingleUserCard(
                     Spacer(modifier = Modifier.width(8.dp))
                     Column {
                         Text(
-                            text = "USB Connection (Single PC)",
+                            text = "USB Tethering (Single PC)",
                             style = MaterialTheme.typography.titleSmall.copy(
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurface,
@@ -573,7 +571,7 @@ fun UsbSingleUserCard(
                             )
                         )
                         Text(
-                            text = "Fastest wired connection via USB Cable",
+                            text = "Direct high-speed wired connection via USB",
                             style = MaterialTheme.typography.bodySmall.copy(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 fontSize = 11.sp
@@ -585,14 +583,15 @@ fun UsbSingleUserCard(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Option A: ADB Reverse (No Tethering Driver required)
+            // USB Tethering IP & Port Box
             Surface(
                 shape = RoundedCornerShape(14.dp),
-                color = NaturalGreenTint,
+                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
+                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(14.dp))
-                    .clickable { onCopy("ADB Command", adbCmd) }
+                    .clickable { onCopy("USB Proxy Address", "$suggestedIp:$port") }
             ) {
                 Column(modifier = Modifier.padding(12.dp)) {
                     Row(
@@ -601,33 +600,33 @@ fun UsbSingleUserCard(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "⚡ ADB REVERSE PORT FORWARD",
+                            text = "🔌 WINDOWS PROXY ADDRESS",
                             style = MaterialTheme.typography.labelSmall.copy(
                                 fontWeight = FontWeight.Bold,
-                                color = NaturalGreenSuccess,
+                                color = MaterialTheme.colorScheme.primary,
                                 fontSize = 10.sp
                             )
                         )
                         Icon(
                             imageVector = Icons.Default.ContentCopy,
                             contentDescription = "Copy",
-                            tint = NaturalGreenSuccess,
+                            tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(14.dp)
                         )
                     }
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = adbCmd,
-                        style = MaterialTheme.typography.bodySmall.copy(
+                        text = "$suggestedIp:$port",
+                        style = MaterialTheme.typography.bodyMedium.copy(
                             fontFamily = FontFamily.Monospace,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface,
-                            fontSize = 12.sp
+                            fontSize = 15.sp
                         )
                     )
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
-                        text = "Windows PC proxy: 127.0.0.1:$port",
+                        text = "Set this in Windows Settings > Proxy > Manual proxy setup",
                         style = MaterialTheme.typography.bodySmall.copy(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             fontSize = 11.sp
@@ -636,46 +635,35 @@ fun UsbSingleUserCard(
                 }
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
-            // Option B: USB Tethering Direct Cable
-            Surface(
-                shape = RoundedCornerShape(14.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+            // Open USB Tethering Settings Button
+            Button(
+                onClick = onOpenTetherSettings,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(14.dp))
-                    .clickable { onCopy("USB IP", "$suggestedIp:$port") }
+                    .height(40.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp)
             ) {
-                Column(modifier = Modifier.padding(12.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "🔌 USB TETHERING IP",
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontSize = 10.sp
-                            )
-                        )
-                        Icon(
-                            imageVector = Icons.Default.ContentCopy,
-                            contentDescription = "Copy",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(14.dp)
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(4.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Cable,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "$suggestedIp:$port",
-                        style = MaterialTheme.typography.bodySmall.copy(
-                            fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary,
-                            fontSize = 13.sp
+                        text = "Open USB Tethering Settings",
+                        style = MaterialTheme.typography.labelMedium.copy(
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 12.sp
                         )
                     )
                 }

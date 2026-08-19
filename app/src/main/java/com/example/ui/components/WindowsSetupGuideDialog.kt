@@ -69,7 +69,7 @@ fun WindowsSetupGuideDialog(
     onOpenTetherSettings: () -> Unit
 ) {
     var selectedTab by remember { mutableIntStateOf(0) }
-    val tabs = listOf("⚡ ADB USB Reverse", "🔌 USB Tethering", "📡 Wi-Fi Hotspot", "💻 Windows Settings", "🛠️ CLI & Git")
+    val tabs = listOf("🔌 USB Tethering", "📡 Wi-Fi Hotspot", "💻 Windows Settings", "🛠️ CLI & Git")
 
     val hotspotIp = remember(interfaces) {
         interfaces.find { it.type == InterfaceType.WIFI_HOTSPOT }?.ipAddress ?: "192.168.43.1"
@@ -178,25 +178,28 @@ fun WindowsSetupGuideDialog(
                         .verticalScroll(rememberScrollState())
                 ) {
                     when (selectedTab) {
-                        0 -> AdbReverseGuide(port = port, onCopy = onCopy)
-                        1 -> UsbTetheringGuide(
+                        0 -> UsbTetheringGuide(
                             suggestedIp = usbIp,
                             port = port,
                             onCopy = onCopy,
                             onOpenTetherSettings = onOpenTetherSettings
                         )
-                        2 -> WifiHotspotGuide(
+                        1 -> WifiHotspotGuide(
                             hotspotIp = hotspotIp,
                             port = port,
                             onCopy = onCopy,
                             onOpenHotspotSettings = onOpenTetherSettings
                         )
-                        3 -> WindowsSettingsGuide(
+                        2 -> WindowsSettingsGuide(
                             suggestedIp = usbIp,
                             port = port,
                             onCopy = onCopy
                         )
-                        4 -> CliAndGitGuide(port = port, onCopy = onCopy)
+                        3 -> CliAndGitGuide(
+                            suggestedIp = usbIp,
+                            port = port,
+                            onCopy = onCopy
+                        )
                     }
                 }
             }
@@ -285,72 +288,6 @@ private fun WifiHotspotGuide(
 
         StepHeader(step = 4, title = "Quick Verification Command on Windows:")
         CodeSnippetBox(code = curlCmd, onCopy = { onCopy("Curl Command", curlCmd) })
-    }
-}
-
-@Composable
-private fun AdbReverseGuide(
-    port: Int,
-    onCopy: (label: String, text: String) -> Unit
-) {
-    val adbCmd = "adb reverse tcp:$port tcp:$port"
-    val testCurlCmd = "curl -x http://127.0.0.1:$port https://ipinfo.io"
-
-    Column {
-        Surface(
-            color = NaturalGreenTint,
-            shape = RoundedCornerShape(16.dp),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column(modifier = Modifier.padding(14.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.FlashOn,
-                        contentDescription = null,
-                        tint = NaturalGreenSuccess,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "Fastest Method (No Tethering Driver Needed)",
-                        style = MaterialTheme.typography.bodyMedium.copy(
-                            fontWeight = FontWeight.Bold,
-                            color = NaturalGreenSuccess
-                        )
-                    )
-                }
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = "With USB Debugging enabled, ADB reverse routes your Windows PC's 127.0.0.1:$port directly to this phone's proxy server over USB.",
-                    style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant)
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(14.dp))
-
-        StepHeader(step = 1, title = "Connect USB cable & Run ADB command on Windows:")
-        Text(
-            text = "Open Command Prompt or PowerShell on your Windows PC and run:",
-            style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant)
-        )
-        Spacer(modifier = Modifier.height(6.dp))
-        CodeSnippetBox(code = adbCmd, onCopy = { onCopy("ADB Command", adbCmd) })
-
-        Spacer(modifier = Modifier.height(14.dp))
-
-        StepHeader(step = 2, title = "Use Proxy on Windows PC:")
-        Text(
-            text = "Set your Windows proxy or browser proxy to:",
-            style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant)
-        )
-        Spacer(modifier = Modifier.height(6.dp))
-        CodeSnippetBox(code = "127.0.0.1:$port", onCopy = { onCopy("Proxy Host", "127.0.0.1:$port") })
-
-        Spacer(modifier = Modifier.height(14.dp))
-
-        StepHeader(step = 3, title = "Quick Test in Windows Terminal:")
-        CodeSnippetBox(code = testCurlCmd, onCopy = { onCopy("Test Curl Command", testCurlCmd) })
     }
 }
 
@@ -446,12 +383,13 @@ private fun WindowsSettingsGuide(
 
 @Composable
 private fun CliAndGitGuide(
+    suggestedIp: String,
     port: Int,
     onCopy: (label: String, text: String) -> Unit
 ) {
-    val psCmd = "\$env:HTTP_PROXY=\"http://127.0.0.1:$port\"; \$env:HTTPS_PROXY=\"http://127.0.0.1:$port\""
-    val cmdCmd = "set HTTP_PROXY=http://127.0.0.1:$port & set HTTPS_PROXY=http://127.0.0.1:$port"
-    val gitCmd = "git config --global http.proxy http://127.0.0.1:$port"
+    val psCmd = "\$env:HTTP_PROXY=\"http://$suggestedIp:$port\"; \$env:HTTPS_PROXY=\"http://$suggestedIp:$port\""
+    val cmdCmd = "set HTTP_PROXY=http://$suggestedIp:$port & set HTTPS_PROXY=http://$suggestedIp:$port"
+    val gitCmd = "git config --global http.proxy http://$suggestedIp:$port"
     val gitUnsetCmd = "git config --global --unset http.proxy"
 
     Column {

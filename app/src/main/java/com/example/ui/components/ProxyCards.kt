@@ -284,7 +284,7 @@ fun NaturalHeroCard(
                     )
                 )
                 Text(
-                    text = "Ready for USB Tethering, Wi-Fi Hotspot & ADB",
+                    text = "Ready for USB Tethering & Wi-Fi Hotspot",
                     style = MaterialTheme.typography.bodySmall.copy(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 12.sp
