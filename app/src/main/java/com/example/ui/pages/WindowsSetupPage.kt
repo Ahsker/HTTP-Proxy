@@ -71,7 +71,7 @@ fun WindowsSetupPage(
     modifier: Modifier = Modifier
 ) {
     var selectedTab by remember { mutableIntStateOf(0) }
-    val tabs = listOf("🔌 USB Tethering", "📡 Wi-Fi Hotspot", "💻 Windows Proxy", "🛠️ CLI & Git")
+    val tabs = listOf("🔌 USB", "📡 Hotspot", "💻 Proxy", "🛠️ CLI")
 
     val hotspotIp = remember(interfaces) {
         interfaces.find { it.type == InterfaceType.WIFI_HOTSPOT }?.ipAddress ?: "192.168.43.1"
@@ -157,8 +157,9 @@ fun WindowsSetupPage(
                                 text = title,
                                 style = MaterialTheme.typography.labelSmall.copy(
                                     fontWeight = if (selectedTab == index) FontWeight.Bold else FontWeight.Normal,
-                                    fontSize = 11.sp
-                                )
+                                    fontSize = 12.sp
+                                ),
+                                maxLines = 1
                             )
                         }
                     )

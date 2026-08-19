@@ -140,32 +140,36 @@ fun MainScreen(viewModel: ProxyViewModel) {
                             )
                         }
                         Spacer(modifier = Modifier.width(12.dp))
-                        Column {
+                        Column(modifier = Modifier.weight(1f, fill = false)) {
                             Text(
                                 text = when (currentNavTab) {
-                                    0 -> "USB Tethering Proxy"
-                                    1 -> "Wi-Fi Hotspot Proxy"
-                                    2 -> "Session Traffic Logs"
-                                    else -> "Windows Setup Guide"
+                                    0 -> "USB Tethering"
+                                    1 -> "Wi-Fi Hotspot"
+                                    2 -> "Traffic Logs"
+                                    else -> "Setup Guide"
                                 },
                                 style = MaterialTheme.typography.titleMedium.copy(
                                     fontWeight = FontWeight.SemiBold,
                                     color = MaterialTheme.colorScheme.onBackground,
                                     fontSize = 17.sp,
                                     letterSpacing = (-0.3).sp
-                                )
+                                ),
+                                maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                             )
                             Text(
                                 text = when (currentNavTab) {
-                                    0 -> "Direct high-speed PC connection"
+                                    0 -> "Direct PC connection"
                                     1 -> "Up to 3 Hotspot Users"
-                                    2 -> "${sessionLogs.size} total requests recorded"
-                                    else -> "PC & CLI configurations"
+                                    2 -> "${sessionLogs.size} requests"
+                                    else -> "PC & CLI configs"
                                 },
                                 style = MaterialTheme.typography.bodySmall.copy(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     fontSize = 11.sp
-                                )
+                                ),
+                                maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                             )
                         }
                     }

@@ -240,7 +240,8 @@ class HttpProxyServer(val serverName: String = "ProxyServer") {
 
     private fun updateSlotsState() {
         val allTrackedIps = synchronized(clientSlotOrder) {
-            val sorted = clientSlotOrder.distinct().sortedWith(
+            val nonLoopback = clientSlotOrder.filter { it != "127.0.0.1" && it != "localhost" }
+            val sorted = nonLoopback.distinct().sortedWith(
                 compareByDescending<String> { (activeClientsMap[it] ?: 0) > 0 }
                     .thenByDescending { perClientMap[it]?.lastActiveTimestamp ?: 0L }
             )

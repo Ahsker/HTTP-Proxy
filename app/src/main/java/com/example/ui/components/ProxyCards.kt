@@ -92,6 +92,7 @@ fun NaturalHeroCard(
     config: ProxyConfig,
     suggestedIp: String,
     uptimeSeconds: Long,
+    stats: TrafficStats,
     onToggleServer: () -> Unit,
     onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier
@@ -99,33 +100,12 @@ fun NaturalHeroCard(
     val isRunning = status == ServerStatus.RUNNING
     val isStarting = status == ServerStatus.STARTING
 
-    // Pulsing animation for running state
-    val infiniteTransition = rememberInfiniteTransition(label = "hero_pulse")
-    val pulseScale by infiniteTransition.animateFloat(
-        initialValue = 1f,
-        targetValue = 1.14f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1200, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "pulseScale"
-    )
-    val pulseAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.6f,
-        targetValue = 0.15f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1200, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "pulseAlpha"
-    )
-
     val heroBgColor by animateColorAsState(
         targetValue = when (status) {
-            ServerStatus.RUNNING -> MaterialTheme.colorScheme.primaryContainer
+            ServerStatus.RUNNING -> MaterialTheme.colorScheme.surface
             ServerStatus.STARTING -> NaturalOrangeTint
             ServerStatus.ERROR -> NaturalRedTint
-            ServerStatus.STOPPED -> MaterialTheme.colorScheme.primaryContainer
+            ServerStatus.STOPPED -> MaterialTheme.colorScheme.surface
         },
         label = "heroBg"
     )
@@ -145,286 +125,350 @@ fun NaturalHeroCard(
         modifier = modifier
             .fillMaxWidth()
             .testTag("natural_hero_card"),
-        shape = RoundedCornerShape(32.dp),
+        shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(containerColor = heroBgColor),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-        border = if (isRunning) androidx.compose.foundation.BorderStroke(2.dp, NaturalGreenSuccess.copy(alpha = 0.4f)) else androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+        border = if (isRunning) androidx.compose.foundation.BorderStroke(1.5.dp, NaturalGreenSuccess.copy(alpha = 0.5f)) else androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(22.dp),
+                .padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Top Status Pill
-            Surface(
-                shape = RoundedCornerShape(20.dp),
-                color = when (status) {
-                    ServerStatus.RUNNING -> NaturalGreenTint
-                    ServerStatus.STARTING -> NaturalOrangeTint
-                    ServerStatus.ERROR -> NaturalRedTint
-                    ServerStatus.STOPPED -> MaterialTheme.colorScheme.surfaceVariant
-                },
-                border = androidx.compose.foundation.BorderStroke(
-                    1.dp,
-                    when (status) {
-                        ServerStatus.RUNNING -> NaturalGreenSuccess.copy(alpha = 0.5f)
-                        ServerStatus.STARTING -> NaturalOrangeUpload.copy(alpha = 0.5f)
-                        ServerStatus.ERROR -> NaturalRedError.copy(alpha = 0.5f)
-                        ServerStatus.STOPPED -> MaterialTheme.colorScheme.outline
-                    }
-                )
+            // Top Status Bar with Status Pill and Compact Start/Stop Toggle Button
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                // Status Pill
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = when (status) {
+                        ServerStatus.RUNNING -> NaturalGreenTint
+                        ServerStatus.STARTING -> NaturalOrangeTint
+                        ServerStatus.ERROR -> NaturalRedTint
+                        ServerStatus.STOPPED -> MaterialTheme.colorScheme.surfaceVariant
+                    },
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        when (status) {
+                            ServerStatus.RUNNING -> NaturalGreenSuccess.copy(alpha = 0.4f)
+                            ServerStatus.STARTING -> NaturalOrangeUpload.copy(alpha = 0.4f)
+                            ServerStatus.ERROR -> NaturalRedError.copy(alpha = 0.4f)
+                            ServerStatus.STOPPED -> MaterialTheme.colorScheme.outline.copy(alpha = 0.7f)
+                        }
+                    )
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(8.dp)
-                            .background(
-                                when (status) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(7.dp)
+                                .background(
+                                    when (status) {
+                                        ServerStatus.RUNNING -> NaturalGreenSuccess
+                                        ServerStatus.STARTING -> NaturalOrangeUpload
+                                        ServerStatus.ERROR -> NaturalRedError
+                                        ServerStatus.STOPPED -> NaturalTextMuted
+                                    },
+                                    CircleShape
+                                )
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = when (status) {
+                                ServerStatus.RUNNING -> "ONLINE • $formattedUptime"
+                                ServerStatus.STARTING -> "STARTING..."
+                                ServerStatus.ERROR -> "ERROR"
+                                ServerStatus.STOPPED -> "OFFLINE"
+                            },
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontWeight = FontWeight.Bold,
+                                color = when (status) {
                                     ServerStatus.RUNNING -> NaturalGreenSuccess
                                     ServerStatus.STARTING -> NaturalOrangeUpload
                                     ServerStatus.ERROR -> NaturalRedError
-                                    ServerStatus.STOPPED -> NaturalTextMuted
+                                    ServerStatus.STOPPED -> MaterialTheme.colorScheme.onSurfaceVariant
                                 },
-                                CircleShape
+                                letterSpacing = 0.5.sp,
+                                fontSize = 11.sp
                             )
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = when (status) {
-                            ServerStatus.RUNNING -> "ONLINE • ROUTING TRAFFIC"
-                            ServerStatus.STARTING -> "STARTING SERVER..."
-                            ServerStatus.ERROR -> "SERVER ERROR"
-                            ServerStatus.STOPPED -> "OFFLINE • PROXY STOPPED"
-                        },
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            fontWeight = FontWeight.Bold,
-                            color = when (status) {
-                                ServerStatus.RUNNING -> NaturalGreenSuccess
-                                ServerStatus.STARTING -> NaturalOrangeUpload
-                                ServerStatus.ERROR -> NaturalRedError
-                                ServerStatus.STOPPED -> MaterialTheme.colorScheme.onSurfaceVariant
-                            },
-                            letterSpacing = 0.8.sp
                         )
-                    )
+                    }
+                }
+
+                // Compact Toggle Server Button
+                Button(
+                    onClick = onToggleServer,
+                    modifier = Modifier
+                        .height(34.dp)
+                        .testTag("main_toggle_server_button"),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (isRunning) NaturalRedError else MaterialTheme.colorScheme.primary,
+                        contentColor = Color.White
+                    ),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+                    elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (isStarting) {
+                            CircularProgressIndicator(
+                                color = Color.White,
+                                strokeWidth = 2.dp,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Starting",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 11.sp
+                                )
+                            )
+                        } else {
+                            Icon(
+                                imageVector = if (isRunning) Icons.Default.Stop else Icons.Default.PlayArrow,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = if (isRunning) "STOP" else "START",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 11.sp
+                                )
+                            )
+                        }
+                    }
                 }
             }
 
-            Spacer(modifier = Modifier.height(18.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
-            // Large Circular Power Switch with Obvious Visual States
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier.size(120.dp)
+            // Embedded Traffic Waveform Graph replacing the old on/off button UI
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("hero_traffic_waveform")
             ) {
-                // Pulsing glow rings when active
-                if (isRunning) {
-                    Box(
-                        modifier = Modifier
-                            .size(116.dp)
-                            .scale(pulseScale)
-                            .background(NaturalGreenSuccess.copy(alpha = pulseAlpha), CircleShape)
-                    )
-                }
-
-                // Main power circle button
                 Box(
                     modifier = Modifier
-                        .size(92.dp)
-                        .clip(CircleShape)
-                        .background(
-                            when (status) {
-                                ServerStatus.RUNNING -> NaturalGreenSuccess
-                                ServerStatus.STARTING -> NaturalOrangeUpload
-                                ServerStatus.ERROR -> NaturalRedError
-                                ServerStatus.STOPPED -> MaterialTheme.colorScheme.surfaceVariant
-                            }
-                        )
-                        .border(
-                            width = if (isRunning) 3.dp else 1.dp,
-                            color = if (isRunning) Color.White.copy(alpha = 0.7f) else MaterialTheme.colorScheme.outline,
-                            shape = CircleShape
-                        )
-                        .clickable { onToggleServer() }
-                        .testTag("hero_power_button"),
-                    contentAlignment = Alignment.Center
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 6.dp)
                 ) {
-                    if (isStarting) {
-                        CircularProgressIndicator(
-                            color = Color.White,
-                            strokeWidth = 3.dp,
-                            modifier = Modifier.size(44.dp)
+                    TrafficGraph(
+                        history = stats.history,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(82.dp)
+                    )
+
+                    // Compact Live Speed overlay tags
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 6.dp, vertical = 2.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "▲ ${NetworkUtils.formatSpeed(stats.currentUpBps)}",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                color = NaturalOrangeUpload,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 10.sp,
+                                fontFamily = FontFamily.Monospace
+                            )
                         )
-                    } else {
-                        Icon(
-                            imageVector = Icons.Default.PowerSettingsNew,
-                            contentDescription = if (isRunning) "Stop Proxy" else "Start Proxy",
-                            tint = if (isRunning || status == ServerStatus.ERROR) Color.White else NaturalTextSecondary,
-                            modifier = Modifier.size(46.dp)
+                        Text(
+                            text = "▼ ${NetworkUtils.formatSpeed(stats.currentDownBps)}",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                color = NaturalGreenSuccess,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 10.sp,
+                                fontFamily = FontFamily.Monospace
+                            )
                         )
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
-            // Running time or Start instruction
-            if (isRunning) {
-                Text(
-                    text = "Running for $formattedUptime",
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onBackground,
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 16.sp
-                    )
-                )
-                Text(
-                    text = "Ready for USB Tethering & Wi-Fi Hotspot",
-                    style = MaterialTheme.typography.bodySmall.copy(
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 12.sp
-                    )
-                )
-            } else {
-                Text(
-                    text = "HTTP & HTTPS Proxy Server",
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onBackground,
-                        fontSize = 17.sp
-                    )
-                )
-                Text(
-                    text = "Share phone connection with Windows PC",
-                    style = MaterialTheme.typography.bodySmall.copy(
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 12.sp
-                    )
-                )
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Big Obvious START / STOP Action Button
-            Button(
-                onClick = onToggleServer,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(52.dp)
-                    .testTag("main_toggle_server_button"),
-                shape = RoundedCornerShape(16.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = if (isRunning) NaturalRedError else MaterialTheme.colorScheme.primary,
-                    contentColor = Color.White
-                ),
-                elevation = ButtonDefaults.buttonElevation(defaultElevation = 2.dp)
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center
-                ) {
-                    Icon(
-                        imageVector = if (isRunning) Icons.Default.Stop else Icons.Default.PlayArrow,
-                        contentDescription = null,
-                        modifier = Modifier.size(24.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = if (isRunning) "STOP SERVER" else "START PROXY SERVER",
-                        style = MaterialTheme.typography.titleSmall.copy(
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = 1.sp,
-                            fontSize = 15.sp
-                        )
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(14.dp))
-
-            // Inset Host IP & Port box with quick edit action
+            // Inset Box containing IP, Port, and Data Sent / Received directly underneath (no upload/download icons)
             Surface(
-                shape = RoundedCornerShape(18.dp),
-                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(18.dp))
-                    .clickable { onOpenSettings() }
-                    .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.7f), RoundedCornerShape(18.dp))
+                    .clip(RoundedCornerShape(16.dp))
+                    .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.6f), RoundedCornerShape(16.dp))
             ) {
-                Row(
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                        .padding(horizontal = 14.dp, vertical = 10.dp)
                 ) {
-                    Column {
-                        Text(
-                            text = "HOST IP ADDRESS",
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontSize = 10.sp,
-                                letterSpacing = 0.8.sp
+                    // Row 1: IP Address and Port with Edit Action
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // IP Address
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable { onOpenSettings() }
+                        ) {
+                            Text(
+                                text = "HOST IP",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontSize = 9.sp,
+                                    letterSpacing = 0.6.sp
+                                )
                             )
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = if (config.host == "0.0.0.0") suggestedIp else config.host,
-                            style = MaterialTheme.typography.bodyLarge.copy(
-                                fontWeight = FontWeight.SemiBold,
-                                fontFamily = FontFamily.Monospace,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                fontSize = 15.sp
+                            Text(
+                                text = if (config.host == "0.0.0.0") suggestedIp else config.host,
+                                style = MaterialTheme.typography.bodyMedium.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    fontSize = 14.sp
+                                ),
+                                maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                             )
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .height(26.dp)
+                                .width(1.dp)
+                                .padding(horizontal = 4.dp)
+                                .background(MaterialTheme.colorScheme.outline)
                         )
+
+                        // Port
+                        Column(
+                            horizontalAlignment = Alignment.Start,
+                            modifier = Modifier
+                                .padding(start = 8.dp)
+                                .clickable { onOpenSettings() }
+                        ) {
+                            Text(
+                                text = "PORT",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontSize = 9.sp,
+                                    letterSpacing = 0.6.sp
+                                )
+                            )
+                            Text(
+                                text = "${config.port}",
+                                style = MaterialTheme.typography.bodyMedium.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontSize = 14.sp
+                                )
+                            )
+                        }
+
+                        IconButton(
+                            onClick = onOpenSettings,
+                            modifier = Modifier
+                                .size(28.dp)
+                                .padding(start = 4.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Edit,
+                                contentDescription = "Edit Settings",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(14.dp)
+                            )
+                        }
                     }
 
-                    Box(
-                        modifier = Modifier
-                            .height(30.dp)
-                            .width(1.dp)
-                            .background(MaterialTheme.colorScheme.outline)
+                    HorizontalDivider(
+                        modifier = Modifier.padding(vertical = 8.dp),
+                        thickness = 0.8.dp,
+                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
                     )
 
-                    Column(horizontalAlignment = Alignment.End) {
-                        Text(
-                            text = "PORT",
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontSize = 10.sp,
-                                letterSpacing = 0.8.sp
-                            )
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = "${config.port}",
-                            style = MaterialTheme.typography.bodyLarge.copy(
-                                fontWeight = FontWeight.Bold,
-                                fontFamily = FontFamily.Monospace,
-                                color = MaterialTheme.colorScheme.primary,
-                                fontSize = 16.sp
-                            )
-                        )
-                    }
-
-                    IconButton(
-                        onClick = onOpenSettings,
-                        modifier = Modifier.size(32.dp)
+                    // Row 2: Data Sent and Data Received shifted directly under IP & Port (no icons, compact)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Edit,
-                            contentDescription = "Edit Settings",
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(16.dp)
+                        // Data Sent
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "DATA SENT",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    color = NaturalOrangeUpload,
+                                    fontSize = 9.sp,
+                                    letterSpacing = 0.6.sp
+                                )
+                            )
+                            Text(
+                                text = NetworkUtils.formatBytes(stats.totalUpBytes),
+                                style = MaterialTheme.typography.bodyMedium.copy(
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    fontSize = 13.sp
+                                ),
+                                maxLines = 1
+                            )
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .height(24.dp)
+                                .width(1.dp)
+                                .padding(horizontal = 4.dp)
+                                .background(MaterialTheme.colorScheme.outline)
                         )
+
+                        // Data Received
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(start = 8.dp)
+                        ) {
+                            Text(
+                                text = "DATA RECEIVED",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    color = NaturalGreenSuccess,
+                                    fontSize = 9.sp,
+                                    letterSpacing = 0.6.sp
+                                )
+                            )
+                            Text(
+                                text = NetworkUtils.formatBytes(stats.totalDownBytes),
+                                style = MaterialTheme.typography.bodyMedium.copy(
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    fontSize = 13.sp
+                                ),
+                                maxLines = 1
+                            )
+                        }
                     }
                 }
             }

@@ -112,12 +112,13 @@ fun HotspotMultiUserPage(
             }
         }
 
-        // 1. Hero Active State Card for Hotspot
+        // 1. Hero Active State Card with integrated Waveform Graph, IP/Port & Sent/Received stats
         NaturalHeroCard(
             status = serverStatus,
             config = config,
             suggestedIp = hotspotGatewayIp,
             uptimeSeconds = uptimeSeconds,
+            stats = trafficStats,
             onToggleServer = onToggleServer,
             onOpenSettings = onOpenSettings
         )
@@ -131,13 +132,7 @@ fun HotspotMultiUserPage(
             onOpenHotspotSettings = onOpenHotspotSettings
         )
 
-        // 3. Multi-User Real-time Aggregated Data Metrics
-        NaturalStatsGrid(stats = trafficStats)
-
-        // 4. Smooth Moving Live Multi-User Traffic Waveform Canvas
-        NaturalTrafficGraphCard(stats = trafficStats)
-
-        // 5. Available IP Addresses Card
+        // 3. Available IP Addresses Card
         IpAddressesCard(
             interfaces = networkInterfaces,
             port = config.port,

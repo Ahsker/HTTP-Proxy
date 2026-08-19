@@ -319,7 +319,7 @@ fun SessionLogItem(
 
                 Spacer(modifier = Modifier.width(10.dp))
 
-                Column {
+                Column(modifier = Modifier.weight(1f, fill = false)) {
                     Text(
                         text = "${log.targetHost}:${log.targetPort}",
                         style = MaterialTheme.typography.bodyMedium.copy(
@@ -335,7 +335,9 @@ fun SessionLogItem(
                         style = MaterialTheme.typography.bodySmall.copy(
                             color = NaturalTextSecondary,
                             fontSize = 11.sp
-                        )
+                        ),
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                     )
                 }
             }

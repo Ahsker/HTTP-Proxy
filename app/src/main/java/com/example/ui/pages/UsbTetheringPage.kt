@@ -111,12 +111,13 @@ fun UsbTetheringPage(
             }
         }
 
-        // 1. Hero Active State Card for USB
+        // 1. Hero Active State Card with integrated Waveform Graph, IP/Port & Sent/Received stats
         NaturalHeroCard(
             status = serverStatus,
             config = config,
             suggestedIp = effectiveUsbIp,
             uptimeSeconds = uptimeSeconds,
+            stats = trafficStats,
             onToggleServer = onToggleServer,
             onOpenSettings = onOpenSettings
         )
@@ -287,7 +288,7 @@ fun UsbTetheringPage(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "Open USB Tethering Android Settings",
+                            text = "Open Tethering Settings",
                             style = MaterialTheme.typography.labelMedium.copy(
                                 color = MaterialTheme.colorScheme.onSurface,
                                 fontWeight = FontWeight.SemiBold,
@@ -299,13 +300,7 @@ fun UsbTetheringPage(
             }
         }
 
-        // 3. USB Real-time Data Metrics
-        NaturalStatsGrid(stats = trafficStats)
-
-        // 4. Smooth Moving Live Traffic Waveform Canvas
-        NaturalTrafficGraphCard(stats = trafficStats)
-
-        // 5. Recent Activity Card
+        // 3. Recent Activity Card
         NaturalRecentActivityCard(
             sessionLogsCount = sessionLogs.size,
             activeConnections = activeConnections,
