@@ -61,7 +61,7 @@ fun TestProxyDialog(
     onRunTest: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
-    var testUrl by remember { mutableStateOf("http://connectivitycheck.gstatic.com/generate_204") }
+    var testUrl by remember { mutableStateOf("https://www.google.com/generate_204") }
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(

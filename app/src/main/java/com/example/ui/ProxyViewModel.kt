@@ -170,7 +170,7 @@ class ProxyViewModel(application: Application) : AndroidViewModel(application) {
         openHotspotSettings()
     }
 
-    fun runProxySelfTest(targetUrl: String = "http://connectivitycheck.gstatic.com/generate_204") {
+    fun runProxySelfTest(targetUrl: String = "https://www.google.com/generate_204") {
         if (_isTesting.value) return
         _isTesting.value = true
         _testResult.value = null
