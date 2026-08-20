@@ -5,6 +5,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.net.ConnectivityManager
 import android.provider.Settings
 import android.widget.Toast
 import androidx.lifecycle.AndroidViewModel
@@ -72,6 +73,7 @@ class ProxyViewModel(application: Application) : AndroidViewModel(application) {
     private var serverStartTimestamp: Long = 0L
 
     init {
+        server.connectivityManager = application.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
         refreshNetworkInterfaces()
 
         // Uptime ticker coroutine

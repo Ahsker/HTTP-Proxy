@@ -98,6 +98,8 @@ class ProxyForegroundService : Service() {
 
     private fun startProxy() {
         val config = preferences.loadConfig()
+        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+        connectivityManager = cm
 
         if (config.keepCpuAwake) {
             acquireLocks()
@@ -107,7 +109,7 @@ class ProxyForegroundService : Service() {
             registerNetworkMonitor()
         }
 
-        serverInstance.start(config)
+        serverInstance.start(config, cm)
 
         // Observe server stats and update notification dynamically
         notificationJob?.cancel()

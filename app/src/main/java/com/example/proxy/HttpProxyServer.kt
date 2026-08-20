@@ -1,5 +1,8 @@
 package com.example.proxy
 
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
 import android.util.Base64
 import android.util.Log
 import com.example.model.ClientSlotStats
@@ -35,10 +38,13 @@ import java.util.concurrent.atomic.AtomicLong
 
 /**
  * Ultra-low latency, high-throughput asynchronous HTTP/HTTPS Proxy Server.
- * Optimized with direct byte buffering, TCP_NODELAY, 64KB socket buffers,
- * and single-pass HTTP request line and header parsing.
+ * Optimized with direct byte buffering, TCP_NODELAY, 256KB socket buffers,
+ * batched stat tracking, upstream network binding, and single-pass HTTP parsing.
  */
-class HttpProxyServer(val serverName: String = "ProxyServer") {
+class HttpProxyServer(
+    val serverName: String = "ProxyServer",
+    var connectivityManager: ConnectivityManager? = null
+) {
 
     private val tag = "HttpProxyServer[$serverName]"
 
@@ -108,7 +114,10 @@ class HttpProxyServer(val serverName: String = "ProxyServer") {
     }
 
     @Synchronized
-    fun start(config: ProxyConfig) {
+    fun start(config: ProxyConfig, cm: ConnectivityManager? = null) {
+        if (cm != null) {
+            this.connectivityManager = cm
+        }
         if (_status.value == ServerStatus.RUNNING || _status.value == ServerStatus.STARTING) {
             return
         }
@@ -413,6 +422,7 @@ class HttpProxyServer(val serverName: String = "ProxyServer") {
                         try {
                             remoteSocket.trafficClass = 0x10 // IPTOS_LOWDELAY
                         } catch (_: Exception) {}
+                        bindSocketToUpstreamNetwork(remoteSocket)
                         remoteSocket.soTimeout = 60000
                         remoteSocket.connect(InetSocketAddress(targetHost, targetPort), 10000)
 
@@ -479,6 +489,7 @@ class HttpProxyServer(val serverName: String = "ProxyServer") {
                         try {
                             remoteSocket.trafficClass = 0x10 // IPTOS_LOWDELAY
                         } catch (_: Exception) {}
+                        bindSocketToUpstreamNetwork(remoteSocket)
                         remoteSocket.soTimeout = 30000
                         remoteSocket.connect(InetSocketAddress(targetHost, targetPort), 10000)
 
@@ -667,6 +678,43 @@ class HttpProxyServer(val serverName: String = "ProxyServer") {
             totalSentBytes.addAndGet(count)
             intervalSentBytes.addAndGet(count)
             trackClientActivity(clientIp, count, 0L)
+        }
+    }
+
+    /**
+     * Binds an outbound socket to the upstream mobile data network or active internet connection.
+     * When the device is operating in Wi-Fi Hotspot or USB tethering mode, this ensures
+     * outgoing proxy requests exit through the mobile carrier data network rather than
+     * looping back to the local tethering interface.
+     */
+    private fun bindSocketToUpstreamNetwork(socket: Socket) {
+        val cm = connectivityManager ?: return
+        try {
+            val allNetworks = cm.allNetworks
+            // 1. Prioritize Cellular / Mobile Data network with Internet capability
+            val mobileNetwork = allNetworks.firstOrNull { network ->
+                val caps = cm.getNetworkCapabilities(network) ?: return@firstOrNull false
+                caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                    caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)
+            }
+
+            // 2. Fallback to active default network with Internet capability
+            val targetNetwork = mobileNetwork
+                ?: cm.activeNetwork?.takeIf { network ->
+                    val caps = cm.getNetworkCapabilities(network) ?: return@takeIf false
+                    caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                }
+                ?: allNetworks.firstOrNull { network ->
+                    val caps = cm.getNetworkCapabilities(network) ?: return@firstOrNull false
+                    caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                }
+
+            if (targetNetwork != null) {
+                targetNetwork.bindSocket(socket)
+                Log.d(tag, "Bound outbound socket to upstream network: $targetNetwork")
+            }
+        } catch (e: Exception) {
+            Log.w(tag, "Failed to bind socket to upstream network: ${e.message}")
         }
     }
 
