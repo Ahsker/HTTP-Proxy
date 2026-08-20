@@ -111,6 +111,7 @@ fun MainScreen(viewModel: ProxyViewModel) {
     val suggestedUsbIp = remember(networkInterfaces) {
         networkInterfaces.find { it.type == InterfaceType.USB_TETHERING }?.ipAddress
             ?: networkInterfaces.find { it.type == InterfaceType.WIFI }?.ipAddress
+            ?: networkInterfaces.firstOrNull { it.type != InterfaceType.LOOPBACK && it.type != InterfaceType.MOBILE }?.ipAddress
             ?: "192.168.42.129"
     }
 

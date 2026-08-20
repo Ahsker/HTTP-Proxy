@@ -81,7 +81,10 @@ fun HotspotMultiUserPage(
     val hotspotIntf = remember(networkInterfaces) {
         networkInterfaces.find { it.type == InterfaceType.WIFI_HOTSPOT }
     }
-    val hotspotGatewayIp = hotspotIntf?.ipAddress ?: "192.168.43.1"
+    val hotspotGatewayIp = hotspotIntf?.ipAddress
+        ?: networkInterfaces.find { it.type == InterfaceType.WIFI }?.ipAddress
+        ?: networkInterfaces.firstOrNull { it.type != InterfaceType.LOOPBACK && it.type != InterfaceType.MOBILE }?.ipAddress
+        ?: "192.168.43.1"
     val activeHotspotCount = remember(clientSlots) {
         clientSlots.count { it.isConnected }
     }

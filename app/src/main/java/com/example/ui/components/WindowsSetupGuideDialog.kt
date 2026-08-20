@@ -72,12 +72,16 @@ fun WindowsSetupGuideDialog(
     val tabs = listOf("🔌 USB Tethering", "📡 Wi-Fi Hotspot", "💻 Windows Settings", "🛠️ CLI & Git")
 
     val hotspotIp = remember(interfaces) {
-        interfaces.find { it.type == InterfaceType.WIFI_HOTSPOT }?.ipAddress ?: "192.168.43.1"
+        interfaces.find { it.type == InterfaceType.WIFI_HOTSPOT }?.ipAddress
+            ?: interfaces.find { it.type == InterfaceType.WIFI }?.ipAddress
+            ?: interfaces.firstOrNull { it.type != InterfaceType.LOOPBACK && it.type != InterfaceType.MOBILE }?.ipAddress
+            ?: "192.168.43.1"
     }
 
     val usbIp = remember(interfaces) {
         interfaces.find { it.type == InterfaceType.USB_TETHERING }?.ipAddress
             ?: interfaces.find { it.type == InterfaceType.WIFI }?.ipAddress
+            ?: interfaces.firstOrNull { it.type != InterfaceType.LOOPBACK && it.type != InterfaceType.MOBILE }?.ipAddress
             ?: "192.168.42.129"
     }
 

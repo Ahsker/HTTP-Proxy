@@ -22,8 +22,7 @@ object NetworkUtils {
                         val name = intf.name.lowercase()
                         val type = when {
                             name.startsWith("rndis") || name.startsWith("usb") || name.startsWith("ncm") -> InterfaceType.USB_TETHERING
-                            (ip.startsWith("192.168.43.") || ip.startsWith("192.168.44.") || ip.startsWith("192.168.49.")) &&
-                                (name.startsWith("ap") || name.startsWith("softap") || name.startsWith("swlan") || name.startsWith("wlan") || name.contains("tether")) -> InterfaceType.WIFI_HOTSPOT
+                            name.startsWith("ap") || name.startsWith("softap") || name.startsWith("swlan") || name.contains("tether") -> InterfaceType.WIFI_HOTSPOT
                             name.startsWith("wlan") || name.startsWith("wifi") -> InterfaceType.WIFI
                             name.startsWith("rmnet") || name.startsWith("ccmni") || name.startsWith("pdp") -> InterfaceType.MOBILE
                             name.startsWith("eth") -> InterfaceType.ETHERNET
