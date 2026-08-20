@@ -33,7 +33,7 @@ class ExampleRobolectricTest {
         assertEquals("8.0 Mbps", NetworkUtils.formatSpeed(1_000_000))
 
         assertEquals("0 B", NetworkUtils.formatBytes(0))
-        assertEquals("1 kB", NetworkUtils.formatBytes(1024))
+        assertEquals("1 KB", NetworkUtils.formatBytes(1024))
         assertEquals("1.0 MB", NetworkUtils.formatBytes(1024 * 1024))
     }
 

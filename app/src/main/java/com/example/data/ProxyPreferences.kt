@@ -2,6 +2,7 @@ package com.example.data
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.example.model.ControlMode
 import com.example.model.ProxyConfig
 import com.example.model.ThemeMode
 
@@ -20,6 +21,7 @@ class ProxyPreferences(context: Context) {
         private const val KEY_AUTO_START = "key_auto_start"
         private const val KEY_KEEP_CPU_AWAKE = "key_keep_cpu_awake"
         private const val KEY_THEME_MODE = "key_theme_mode"
+        private const val KEY_CONTROL_MODE = "key_control_mode"
     }
 
     fun loadConfig(): ProxyConfig {
@@ -59,5 +61,18 @@ class ProxyPreferences(context: Context) {
 
     fun saveThemeMode(mode: ThemeMode) {
         prefs.edit().putString(KEY_THEME_MODE, mode.name).apply()
+    }
+
+    fun loadControlMode(): ControlMode {
+        val name = prefs.getString(KEY_CONTROL_MODE, ControlMode.USB_SINGLE_USER.name) ?: ControlMode.USB_SINGLE_USER.name
+        return try {
+            ControlMode.valueOf(name)
+        } catch (e: Exception) {
+            ControlMode.USB_SINGLE_USER
+        }
+    }
+
+    fun saveControlMode(mode: ControlMode) {
+        prefs.edit().putString(KEY_CONTROL_MODE, mode.name).apply()
     }
 }

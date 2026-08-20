@@ -47,7 +47,7 @@ class ProxyViewModel(application: Application) : AndroidViewModel(application) {
     private val _themeMode = MutableStateFlow(preferences.loadThemeMode())
     val themeMode: StateFlow<ThemeMode> = _themeMode.asStateFlow()
 
-    private val _controlMode = MutableStateFlow(ControlMode.USB_SINGLE_USER)
+    private val _controlMode = MutableStateFlow(preferences.loadControlMode())
     val controlMode: StateFlow<ControlMode> = _controlMode.asStateFlow()
 
     val serverStatus: StateFlow<ServerStatus> = server.status
@@ -95,6 +95,7 @@ class ProxyViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setControlMode(mode: ControlMode) {
         _controlMode.value = mode
+        preferences.saveControlMode(mode)
     }
 
     fun toggleDayNight() {
@@ -110,7 +111,10 @@ class ProxyViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun toggleServer() {
+    fun toggleServer(targetMode: ControlMode? = null) {
+        if (targetMode != null) {
+            setControlMode(targetMode)
+        }
         val current = serverStatus.value
         if (current == ServerStatus.RUNNING || current == ServerStatus.STARTING) {
             ProxyForegroundService.stopService(getApplication())

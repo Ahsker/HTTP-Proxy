@@ -1,5 +1,6 @@
 package com.example.network
 
+import com.example.model.ControlMode
 import com.example.model.InterfaceType
 import com.example.model.NetworkInterfaceInfo
 import java.net.Inet4Address
@@ -100,8 +101,27 @@ object NetworkUtils {
         return when {
             bytes >= 1_073_741_824 -> String.format("%.2f GB", bytes / 1_073_741_824.0)
             bytes >= 1_048_576 -> String.format("%.1f MB", bytes / 1_048_576.0)
-            bytes >= 1_024 -> String.format("%d kB", bytes / 1_024)
+            bytes >= 1_024 -> String.format("%d KB", bytes / 1_024)
             else -> "$bytes B"
+        }
+    }
+
+    /**
+     * Finds the concrete IP address to bind for the requested ControlMode.
+     * USB mode binds only to USB tethering interfaces (rndis/usb/ncm).
+     * Hotspot mode binds to AP/Hotspot interfaces or non-cellular local network.
+     */
+    fun getTargetBindIp(mode: ControlMode): String? {
+        val interfaces = getAvailableNetworkInterfaces()
+        return when (mode) {
+            ControlMode.USB_SINGLE_USER -> {
+                interfaces.firstOrNull { it.type == InterfaceType.USB_TETHERING }?.ipAddress
+            }
+            ControlMode.HOTSPOT_MULTI_USER -> {
+                interfaces.firstOrNull { it.type == InterfaceType.WIFI_HOTSPOT }?.ipAddress
+                    ?: interfaces.firstOrNull { it.type == InterfaceType.WIFI }?.ipAddress
+                    ?: interfaces.firstOrNull { it.type != InterfaceType.LOOPBACK && it.type != InterfaceType.MOBILE }?.ipAddress
+            }
         }
     }
 }

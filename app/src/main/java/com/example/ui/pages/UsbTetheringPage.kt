@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -137,7 +138,10 @@ fun UsbTetheringPage(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        modifier = Modifier.weight(1f),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Box(
                             modifier = Modifier
                                 .size(36.dp)
@@ -154,7 +158,7 @@ fun UsbTetheringPage(
                         Spacer(modifier = Modifier.width(10.dp))
                         Column {
                             Text(
-                                text = "USB High-Speed Wired Mode",
+                                text = "USB High-Speed Mode",
                                 style = MaterialTheme.typography.titleSmall.copy(
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.onSurface,
@@ -162,7 +166,7 @@ fun UsbTetheringPage(
                                 )
                             )
                             Text(
-                                text = if (usbIntf != null) "USB Tethering active (${usbIntf.name})" else "Direct connection for single Windows PC",
+                                text = if (usbIntf != null) "Tethering active (${usbIntf.name})" else "Direct PC connection",
                                 style = MaterialTheme.typography.bodySmall.copy(
                                     color = if (usbIntf != null) NaturalGreenSuccess else MaterialTheme.colorScheme.onSurfaceVariant,
                                     fontSize = 11.sp
@@ -173,27 +177,16 @@ fun UsbTetheringPage(
 
                     if (usbIntf != null) {
                         Surface(
-                            shape = RoundedCornerShape(12.dp),
-                            color = NaturalGreenTint
+                            shape = CircleShape,
+                            color = NaturalGreenTint,
+                            modifier = Modifier.size(28.dp)
                         ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
+                            Box(contentAlignment = Alignment.Center) {
                                 Icon(
                                     imageVector = Icons.Default.CheckCircle,
-                                    contentDescription = null,
+                                    contentDescription = "Plugged In / Connected",
                                     tint = NaturalGreenSuccess,
-                                    modifier = Modifier.size(12.dp)
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    text = "Plugged In",
-                                    style = MaterialTheme.typography.labelSmall.copy(
-                                        color = NaturalGreenSuccess,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 10.sp
-                                    )
+                                    modifier = Modifier.size(18.dp)
                                 )
                             }
                         }

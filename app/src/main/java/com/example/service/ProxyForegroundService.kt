@@ -8,6 +8,7 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.net.ConnectivityManager
+import android.net.LinkProperties
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
@@ -15,10 +16,13 @@ import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.example.MainActivity
 import com.example.R
 import com.example.data.ProxyPreferences
+import com.example.model.ControlMode
+import com.example.model.InterfaceType
 import com.example.model.ProxyConfig
 import com.example.model.ServerStatus
 import com.example.network.NetworkUtils
@@ -28,6 +32,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 
@@ -38,6 +43,7 @@ class ProxyForegroundService : Service() {
         const val ACTION_STOP = "com.example.proxy.ACTION_STOP"
         const val NOTIFICATION_ID = 1001
         const val CHANNEL_ID = "proxy_service_channel"
+        private const val TAG = "ProxyForegroundService"
 
         // Singleton server instance accessible from UI & ViewModel
         val serverInstance: HttpProxyServer by lazy { HttpProxyServer() }
@@ -69,6 +75,7 @@ class ProxyForegroundService : Service() {
 
     private var connectivityManager: ConnectivityManager? = null
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
+    private var lastBoundIp: String? = null
 
     private lateinit var preferences: ProxyPreferences
 
@@ -77,6 +84,8 @@ class ProxyForegroundService : Service() {
         preferences = ProxyPreferences(this)
         createNotificationChannel()
     }
+
+    override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val action = intent?.action
@@ -97,19 +106,35 @@ class ProxyForegroundService : Service() {
     }
 
     private fun startProxy() {
+        val mode = preferences.loadControlMode()
         val config = preferences.loadConfig()
         val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
         connectivityManager = cm
 
         if (config.keepCpuAwake) {
-            acquireLocks()
+            acquireLocks(mode)
         }
 
-        if (config.powerSave) {
-            registerNetworkMonitor()
+        registerNetworkMonitor()
+
+        val targetIp = NetworkUtils.getTargetBindIp(mode)
+        if (targetIp == null) {
+            val errorMsg = when (mode) {
+                ControlMode.USB_SINGLE_USER ->
+                    "USB Tethering not active. Connect USB cable and enable USB Tethering in Settings."
+                ControlMode.HOTSPOT_MULTI_USER ->
+                    "Wi-Fi Hotspot not active. Enable Hotspot in Android Settings."
+            }
+            serverInstance.setError(errorMsg)
+            val notification = buildNotification("HTTP Proxy Error", errorMsg)
+            val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            manager.notify(NOTIFICATION_ID, notification)
+            return
         }
 
-        serverInstance.start(config, cm)
+        lastBoundIp = targetIp
+        val effectiveConfig = config.copy(host = targetIp)
+        serverInstance.start(effectiveConfig, cm)
 
         // Observe server stats and update notification dynamically
         notificationJob?.cancel()
@@ -123,7 +148,8 @@ class ProxyForegroundService : Service() {
             }.collect { (status, stats, conns) ->
                 when (status) {
                     ServerStatus.RUNNING -> {
-                        val title = "HTTP Proxy Active on :${config.port}"
+                        val modeLabel = if (mode == ControlMode.USB_SINGLE_USER) "USB" else "Hotspot"
+                        val title = "HTTP Proxy Active [$modeLabel] on $targetIp:${config.port}"
                         val text = "Active sockets: $conns • Up: ${NetworkUtils.formatBytes(stats.totalUpBytes)} • Down: ${NetworkUtils.formatBytes(stats.totalDownBytes)}"
                         val notification = buildNotification(title, text)
                         val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -148,12 +174,13 @@ class ProxyForegroundService : Service() {
     private fun stopProxy() {
         notificationJob?.cancel()
         notificationJob = null
+        lastBoundIp = null
         serverInstance.stop()
         releaseLocks()
         unregisterNetworkMonitor()
     }
 
-    private fun acquireLocks() {
+    private fun acquireLocks(mode: ControlMode) {
         try {
             if (wakeLock == null) {
                 val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
@@ -166,21 +193,27 @@ class ProxyForegroundService : Service() {
                 }
             }
 
-            if (wifiLock == null) {
-                val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
-                val wifiMode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    WifiManager.WIFI_MODE_FULL_LOW_LATENCY
-                } else {
-                    @Suppress("DEPRECATION")
-                    WifiManager.WIFI_MODE_FULL_HIGH_PERF
+            // Only acquire WifiLock in Hotspot mode. In USB mode, disabling WifiLock eliminates Wi-Fi power throttling.
+            if (mode == ControlMode.HOTSPOT_MULTI_USER) {
+                if (wifiLock == null) {
+                    val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+                    val wifiMode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        WifiManager.WIFI_MODE_FULL_LOW_LATENCY
+                    } else {
+                        @Suppress("DEPRECATION")
+                        WifiManager.WIFI_MODE_FULL_HIGH_PERF
+                    }
+                    wifiLock = wifiManager.createWifiLock(
+                        wifiMode,
+                        "HTTPProxy::WifiLock"
+                    ).apply {
+                        setReferenceCounted(false)
+                        acquire()
+                    }
                 }
-                wifiLock = wifiManager.createWifiLock(
-                    wifiMode,
-                    "HTTPProxy::WifiLock"
-                ).apply {
-                    setReferenceCounted(false)
-                    acquire()
-                }
+            } else {
+                wifiLock?.let { if (it.isHeld) it.release() }
+                wifiLock = null
             }
         } catch (e: Exception) {
             e.printStackTrace()
@@ -211,16 +244,49 @@ class ProxyForegroundService : Service() {
                 .build()
 
             networkCallback = object : ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(network: Network) {
+                    serverInstance.refreshUpstreamNetwork()
+                    checkAndRebindIfInterfaceChanged()
+                }
+
                 override fun onLost(network: Network) {
-                    val config = preferences.loadConfig()
-                    if (config.powerSave) {
-                        // In power save mode, if network drops, handle gracefully
-                    }
+                    serverInstance.refreshUpstreamNetwork()
+                    checkAndRebindIfInterfaceChanged()
+                }
+
+                override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) {
+                    serverInstance.refreshUpstreamNetwork()
+                }
+
+                override fun onLinkPropertiesChanged(network: Network, linkProperties: LinkProperties) {
+                    checkAndRebindIfInterfaceChanged()
                 }
             }
             networkCallback?.let { connectivityManager?.registerNetworkCallback(request, it) }
         } catch (e: Exception) {
             e.printStackTrace()
+        }
+    }
+
+    private fun checkAndRebindIfInterfaceChanged() {
+        val currentStatus = serverInstance.status.value
+        if (currentStatus != ServerStatus.RUNNING && currentStatus != ServerStatus.ERROR) return
+        val mode = preferences.loadControlMode()
+        val freshIp = NetworkUtils.getTargetBindIp(mode)
+
+        if (freshIp != null && freshIp != lastBoundIp) {
+            Log.i(TAG, "Network interface IP changed from $lastBoundIp to $freshIp. Auto-rebinding proxy...")
+            serviceScope.launch {
+                delay(600) // Debounce rapid network state changes
+                val confirmedIp = NetworkUtils.getTargetBindIp(mode)
+                if (confirmedIp != null && confirmedIp != lastBoundIp) {
+                    val config = preferences.loadConfig()
+                    lastBoundIp = confirmedIp
+                    val effectiveConfig = config.copy(host = confirmedIp)
+                    serverInstance.stop()
+                    serverInstance.start(effectiveConfig, connectivityManager)
+                }
+            }
         }
     }
 
@@ -287,6 +353,4 @@ class ProxyForegroundService : Service() {
         serviceScope.cancel()
         super.onDestroy()
     }
-
-    override fun onBind(intent: Intent?): IBinder? = null
 }

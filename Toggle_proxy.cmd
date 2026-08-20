@@ -154,8 +154,9 @@ if "!IS_ADMIN!"=="1" (
 )
 echo ========================================================
 echo.
+echo   Configuration applied. Window will close now.
 pause
-goto :MENU
+exit /b 0
 
 :: =============================================================
 :: TURN OFF PROXY and RESTORE DEFAULT TCP
@@ -187,8 +188,9 @@ if "!IS_ADMIN!"=="1" (
 )
 echo ========================================================
 echo.
+echo   Proxy disabled. Window will close now.
 pause
-goto :MENU
+exit /b 0
 
 :: =============================================================
 :: SUBROUTINE: Refresh WinINet settings (no browser restart)

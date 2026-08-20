@@ -96,6 +96,22 @@ class HttpProxyServer(
 
     private var currentConfig: ProxyConfig = ProxyConfig()
 
+    @Volatile
+    private var cachedUpstreamNetwork: Network? = null
+
+    fun setUpstreamNetwork(network: Network?) {
+        cachedUpstreamNetwork = network
+    }
+
+    fun refreshUpstreamNetwork() {
+        cachedUpstreamNetwork = findActiveUpstreamNetwork()
+    }
+
+    fun setError(message: String) {
+        _errorMessage.value = message
+        _status.value = ServerStatus.ERROR
+    }
+
     companion object {
         private fun initialHistory(): List<TrafficSample> {
             val now = System.currentTimeMillis()
@@ -123,6 +139,7 @@ class HttpProxyServer(
         }
 
         currentConfig = config
+        cachedUpstreamNetwork = findActiveUpstreamNetwork()
         _status.value = ServerStatus.STARTING
         _errorMessage.value = null
 
@@ -189,6 +206,7 @@ class HttpProxyServer(
             serverSocket?.close()
         } catch (_: Exception) {}
         serverSocket = null
+        cachedUpstreamNetwork = null
 
         statsJob?.cancel()
         statsJob = null
@@ -699,11 +717,7 @@ class HttpProxyServer(
         }
     }
 
-    /**
-     * Finds the upstream mobile data network or active internet connection.
-     * Prioritizes Cellular / Mobile Data network (e.g. 5G/4G carrier) with internet capability.
-     */
-    private fun getUpstreamNetwork(): Network? {
+    private fun findActiveUpstreamNetwork(): Network? {
         val cm = connectivityManager ?: return null
         return try {
             val allNetworks = cm.allNetworks
@@ -725,9 +739,21 @@ class HttpProxyServer(
                     caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
                 }
         } catch (e: Exception) {
-            Log.w(tag, "Failed to get upstream network: ${e.message}")
+            Log.w(tag, "Failed to find active upstream network: ${e.message}")
             null
         }
+    }
+
+    /**
+     * Finds the upstream mobile data network or active internet connection.
+     * Uses cached @Volatile Network instance to eliminate per-connection Binder IPC overhead.
+     */
+    private fun getUpstreamNetwork(): Network? {
+        val cached = cachedUpstreamNetwork
+        if (cached != null) return cached
+        val fresh = findActiveUpstreamNetwork()
+        cachedUpstreamNetwork = fresh
+        return fresh
     }
 
     /**
