@@ -178,7 +178,8 @@ class ProxyViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch(Dispatchers.IO) {
             val startTime = System.currentTimeMillis()
             try {
-                val currentPort = _config.value.port
+                val currentConfig = _config.value
+                val currentPort = currentConfig.port
                 val proxy = Proxy(Proxy.Type.HTTP, InetSocketAddress("127.0.0.1", currentPort))
                 val url = URL(targetUrl)
                 val connection = url.openConnection(proxy) as HttpURLConnection
@@ -186,14 +187,23 @@ class ProxyViewModel(application: Application) : AndroidViewModel(application) {
                 connection.readTimeout = 8000
                 connection.instanceFollowRedirects = true
 
+                // Attach Proxy-Authorization header if authentication is configured
+                if (currentConfig.authEnabled && currentConfig.username.isNotBlank()) {
+                    val credentials = "${currentConfig.username}:${currentConfig.password}"
+                    val encoded = android.util.Base64.encodeToString(credentials.toByteArray(Charsets.UTF_8), android.util.Base64.NO_WRAP)
+                    connection.setRequestProperty("Proxy-Authorization", "Basic $encoded")
+                }
+
                 val code = connection.responseCode
                 val latency = System.currentTimeMillis() - startTime
                 val success = code in 200..399
 
-                val msg = if (success) {
-                    "Proxy responded successfully (HTTP $code) in ${latency}ms"
-                } else {
-                    "Server returned HTTP $code"
+                val msg = when {
+                    success -> "Proxy responded successfully (HTTP $code) in ${latency}ms"
+                    code == 407 -> "Authentication Required (HTTP 407) — Check username/password"
+                    code == 502 -> "Bad Gateway (HTTP 502) — Phone mobile data connection failed"
+                    code == 504 -> "Gateway Timeout (HTTP 504) — Upstream network took too long to respond"
+                    else -> "Server returned HTTP $code"
                 }
 
                 _testResult.value = TestResult(
@@ -206,10 +216,15 @@ class ProxyViewModel(application: Application) : AndroidViewModel(application) {
                 connection.disconnect()
             } catch (e: Exception) {
                 val latency = System.currentTimeMillis() - startTime
+                val errorMsg = when {
+                    e is java.net.ConnectException -> "Proxy service not running or port bind failed (Connection Refused)"
+                    e is java.net.SocketTimeoutException -> "Self-test timed out (No response from upstream mobile network)"
+                    else -> e.localizedMessage ?: "Connection failed"
+                }
                 _testResult.value = TestResult(
                     success = false,
                     latencyMs = latency,
-                    message = e.localizedMessage ?: "Connection failed",
+                    message = errorMsg,
                     targetUrl = targetUrl,
                     responseCode = 0
                 )

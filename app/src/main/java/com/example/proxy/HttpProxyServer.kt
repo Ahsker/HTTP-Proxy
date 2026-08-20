@@ -422,9 +422,18 @@ class HttpProxyServer(
                         try {
                             remoteSocket.trafficClass = 0x10 // IPTOS_LOWDELAY
                         } catch (_: Exception) {}
-                        bindSocketToUpstreamNetwork(remoteSocket)
+                        val upstreamNetwork = getUpstreamNetwork()
+                        if (upstreamNetwork != null) {
+                            try {
+                                upstreamNetwork.bindSocket(remoteSocket)
+                                Log.d(tag, "Bound HTTPS socket to upstream network: $upstreamNetwork")
+                            } catch (e: Exception) {
+                                Log.w(tag, "bindSocket failed: ${e.message}")
+                            }
+                        }
                         remoteSocket.soTimeout = 60000
-                        remoteSocket.connect(InetSocketAddress(targetHost, targetPort), 10000)
+                        val targetInetAddress = resolveAddress(targetHost, upstreamNetwork)
+                        remoteSocket.connect(InetSocketAddress(targetInetAddress, targetPort), 10000)
 
                         // Respond 200 Connection Established to client
                         val ack = "HTTP/1.1 200 Connection Established\r\n\r\n".toByteArray(Charsets.US_ASCII)
@@ -489,9 +498,18 @@ class HttpProxyServer(
                         try {
                             remoteSocket.trafficClass = 0x10 // IPTOS_LOWDELAY
                         } catch (_: Exception) {}
-                        bindSocketToUpstreamNetwork(remoteSocket)
+                        val upstreamNetwork = getUpstreamNetwork()
+                        if (upstreamNetwork != null) {
+                            try {
+                                upstreamNetwork.bindSocket(remoteSocket)
+                                Log.d(tag, "Bound HTTP socket to upstream network: $upstreamNetwork")
+                            } catch (e: Exception) {
+                                Log.w(tag, "bindSocket failed: ${e.message}")
+                            }
+                        }
                         remoteSocket.soTimeout = 30000
-                        remoteSocket.connect(InetSocketAddress(targetHost, targetPort), 10000)
+                        val targetInetAddress = resolveAddress(targetHost, upstreamNetwork)
+                        remoteSocket.connect(InetSocketAddress(targetInetAddress, targetPort), 10000)
 
                         val remoteIn = remoteSocket.getInputStream()
                         val remoteOut = remoteSocket.getOutputStream()
@@ -682,14 +700,12 @@ class HttpProxyServer(
     }
 
     /**
-     * Binds an outbound socket to the upstream mobile data network or active internet connection.
-     * When the device is operating in Wi-Fi Hotspot or USB tethering mode, this ensures
-     * outgoing proxy requests exit through the mobile carrier data network rather than
-     * looping back to the local tethering interface.
+     * Finds the upstream mobile data network or active internet connection.
+     * Prioritizes Cellular / Mobile Data network (e.g. 5G/4G carrier) with internet capability.
      */
-    private fun bindSocketToUpstreamNetwork(socket: Socket) {
-        val cm = connectivityManager ?: return
-        try {
+    private fun getUpstreamNetwork(): Network? {
+        val cm = connectivityManager ?: return null
+        return try {
             val allNetworks = cm.allNetworks
             // 1. Prioritize Cellular / Mobile Data network with Internet capability
             val mobileNetwork = allNetworks.firstOrNull { network ->
@@ -699,7 +715,7 @@ class HttpProxyServer(
             }
 
             // 2. Fallback to active default network with Internet capability
-            val targetNetwork = mobileNetwork
+            mobileNetwork
                 ?: cm.activeNetwork?.takeIf { network ->
                     val caps = cm.getNetworkCapabilities(network) ?: return@takeIf false
                     caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
@@ -708,13 +724,47 @@ class HttpProxyServer(
                     val caps = cm.getNetworkCapabilities(network) ?: return@firstOrNull false
                     caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
                 }
+        } catch (e: Exception) {
+            Log.w(tag, "Failed to get upstream network: ${e.message}")
+            null
+        }
+    }
 
-            if (targetNetwork != null) {
-                targetNetwork.bindSocket(socket)
-                Log.d(tag, "Bound outbound socket to upstream network: $targetNetwork")
+    /**
+     * Resolves domain names (DNS) directly through the upstream network (e.g., mobile carrier)
+     * using network.getAllByName(host) to prevent 21-second timeouts in Hotspot mode.
+     */
+    private fun resolveAddress(host: String, network: Network?): InetAddress {
+        // Fast path for raw IPv4 or IPv6 literals without triggering DNS lookups
+        if (host.matches(Regex("^\\d{1,3}(\\.\\d{1,3}){3}$")) || host.contains(":")) {
+            return try {
+                InetAddress.getByName(host)
+            } catch (_: Exception) {
+                InetAddress.getByName(host)
+            }
+        }
+
+        return try {
+            if (network != null) {
+                // Force DNS resolution using the upstream mobile/cellular network
+                val addresses = network.getAllByName(host)
+                if (addresses.isNotEmpty()) {
+                    Log.d(tag, "Resolved $host via upstream mobile DNS -> ${addresses[0].hostAddress}")
+                    addresses[0]
+                } else {
+                    network.getByName(host)
+                }
+            } else {
+                InetAddress.getByName(host)
             }
         } catch (e: Exception) {
-            Log.w(tag, "Failed to bind socket to upstream network: ${e.message}")
+            Log.d(tag, "Upstream DNS resolution for $host failed (${e.message}), fallback to default DNS")
+            try {
+                InetAddress.getByName(host)
+            } catch (fallbackEx: Exception) {
+                Log.e(tag, "All DNS resolution failed for $host: ${fallbackEx.message}")
+                throw fallbackEx
+            }
         }
     }
 
