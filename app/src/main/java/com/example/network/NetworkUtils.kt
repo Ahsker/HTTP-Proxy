@@ -39,7 +39,7 @@ object NetworkUtils {
 
     fun hotspotPrefix(): String? = getInterfacePrefix {
         it.startsWith("ap") || it.startsWith("swlan") || it.startsWith("softap") || it.startsWith("wlan1") || it.contains("tether")
-    }
+    } ?: getInterfacePrefix { it.startsWith("wlan") }
 
     fun usbPrefix(): String? = getInterfacePrefix {
         it.startsWith("rndis") || it.startsWith("usb") || it.startsWith("ncm")
@@ -49,6 +49,11 @@ object NetworkUtils {
         val result = mutableListOf<NetworkInterfaceInfo>()
         try {
             val interfaces = Collections.list(NetworkInterface.getNetworkInterfaces())
+            val hasExplicitAp = interfaces.any {
+                val n = it.name.lowercase()
+                it.isUp && (n.startsWith("ap") || n.startsWith("softap") || n.startsWith("swlan") || n.startsWith("wlan1") || n.contains("tether"))
+            }
+
             for (intf in interfaces) {
                 if (!intf.isUp) continue
 
@@ -60,7 +65,14 @@ object NetworkUtils {
                         val type = when {
                             name.startsWith("rndis") || name.startsWith("usb") || name.startsWith("ncm") -> InterfaceType.USB_TETHERING
                             name.startsWith("ap") || name.startsWith("softap") || name.startsWith("swlan") || name.startsWith("wlan1") || name.contains("tether") -> InterfaceType.WIFI_HOTSPOT
-                            name.startsWith("wlan") || name.startsWith("wifi") -> InterfaceType.WIFI
+                            name.startsWith("wlan") || name.startsWith("wifi") -> {
+                                // If device runs AP on wlan0 and no explicit apX/softapX is present, treat as Hotspot
+                                if (!hasExplicitAp && (ip.startsWith("192.168.43.") || ip.startsWith("192.168.44.") || ip.startsWith("192.168.49.") || ip.startsWith("10.169."))) {
+                                    InterfaceType.WIFI_HOTSPOT
+                                } else {
+                                    InterfaceType.WIFI
+                                }
+                            }
                             name.startsWith("rmnet") || name.startsWith("ccmni") || name.startsWith("pdp") -> InterfaceType.MOBILE
                             name.startsWith("eth") -> InterfaceType.ETHERNET
                             addr.isLoopbackAddress || name.startsWith("lo") -> InterfaceType.LOOPBACK

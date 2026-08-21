@@ -184,7 +184,10 @@ class ProxyViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 val currentConfig = _config.value
                 val currentPort = currentConfig.port
-                val proxy = Proxy(Proxy.Type.HTTP, InetSocketAddress("127.0.0.1", currentPort))
+                val host = com.example.service.ProxyForegroundService.serverInstance.boundHost
+                    ?: NetworkUtils.getTargetBindIp(_controlMode.value)
+                    ?: "127.0.0.1"
+                val proxy = Proxy(Proxy.Type.HTTP, InetSocketAddress(host, currentPort))
                 val url = URL(targetUrl)
                 val connection = url.openConnection(proxy) as HttpURLConnection
                 connection.connectTimeout = 8000

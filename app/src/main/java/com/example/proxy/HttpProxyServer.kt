@@ -234,17 +234,23 @@ class HttpProxyServer(
 
             val cb = object : ConnectivityManager.NetworkCallback() {
                 override fun onAvailable(network: Network) {
-                    cachedUpstreamNetwork = network
+                    val caps = cm.getNetworkCapabilities(network)
+                    if (caps != null && caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)) {
+                        cachedUpstreamNetwork = network
+                    } else if (cachedUpstreamNetwork == null) {
+                        cachedUpstreamNetwork = network
+                    }
                 }
 
                 override fun onLost(network: Network) {
                     if (cachedUpstreamNetwork == network) {
-                        cachedUpstreamNetwork = null
+                        cachedUpstreamNetwork = findActiveUpstreamNetwork()
                     }
                 }
 
                 override fun onCapabilitiesChanged(network: Network, networkCapabilities: NetworkCapabilities) {
-                    if (networkCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) {
+                    if (networkCapabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) &&
+                        networkCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) {
                         cachedUpstreamNetwork = network
                     }
                 }
@@ -304,6 +310,7 @@ class HttpProxyServer(
                 history.addAll(initialHistory())
             }
 
+            var pollCounter = 0
             while (isActive) {
                 delay(800) // Smooth refresh rate
                 val upBytes = intervalSentBytes.getAndSet(0L)
@@ -332,6 +339,30 @@ class HttpProxyServer(
                 _connectedClients.value = activeClientsMap.keys.toSet()
 
                 updateSlotsState()
+
+                // Periodic check (~every 4.8s) for interface IP change (e.g. Hotspot subnet randomization / USB reconnect)
+                pollCounter++
+                if (pollCounter >= 6) {
+                    pollCounter = 0
+                    checkInterfaceAndRebindIfNeeded()
+                }
+            }
+        }
+    }
+
+    private fun checkInterfaceAndRebindIfNeeded() {
+        if (_status.value != ServerStatus.RUNNING) return
+        val currentBind = boundHost ?: return
+        val expected = NetworkUtils.getTargetBindIp(activeMode)
+        if (expected != null && expected != currentBind) {
+            Log.i(tag, "Interface IP changed from $currentBind to $expected. Triggering rebind...")
+            val newConfig = currentConfig.copy(host = expected)
+            val mode = activeMode
+            val cm = connectivityManager
+            serverScope.launch {
+                stopInternal()
+                delay(400)
+                start(newConfig, mode, cm)
             }
         }
     }
