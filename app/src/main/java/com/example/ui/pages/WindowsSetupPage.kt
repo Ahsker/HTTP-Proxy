@@ -72,7 +72,7 @@ fun WindowsSetupPage(
     modifier: Modifier = Modifier
 ) {
     var selectedTab by remember { mutableIntStateOf(0) }
-    val tabs = listOf("🔌 USB", "📡 Wi-Fi", "💻 Windows", "🛠️ CLI")
+    val tabs = listOf("🔌 USB", "📡 Wi-Fi", "💻 PC", "🛠️ CLI")
 
     val hotspotIp = remember(interfaces) {
         interfaces.find { it.type == InterfaceType.WIFI_HOTSPOT }?.ipAddress

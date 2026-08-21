@@ -113,6 +113,12 @@ class HttpProxyServer(
     @Volatile
     private var activeClientPrefix: String? = null
 
+    // USB mode: skip ConnectivityManager upstream binding entirely.
+    // Android's default routing already sends app sockets via cellular;
+    // avoiding bindSocket/getUpstreamNetwork removes Binder IPC per connection.
+    @Volatile
+    private var bypassUpstreamBinding: Boolean = false
+
     @Volatile
     private var cachedUpstreamNetwork: Network? = null
 
@@ -162,16 +168,24 @@ class HttpProxyServer(
 
         currentConfig = config
         activeMode = mode
+        bypassUpstreamBinding = (mode == ControlMode.USB_SINGLE_USER)
         activeClientPrefix = if (mode == ControlMode.HOTSPOT_MULTI_USER) {
             NetworkUtils.hotspotPrefix()
         } else {
             NetworkUtils.usbPrefix()
         }
 
-        cachedUpstreamNetwork = findActiveUpstreamNetwork()
+        // USB mode skips all ConnectivityManager wiring (no upstream bind, no callback).
+        // Hotspot mode keeps explicit cellular binding to avoid routing loops.
+        if (bypassUpstreamBinding) {
+            cachedUpstreamNetwork = null
+            unregisterUpstreamNetworkCallback()
+        } else {
+            cachedUpstreamNetwork = findActiveUpstreamNetwork()
 
-        // Register one-time upstream NetworkCallback to eliminate per-connection Binder IPC scans
-        registerUpstreamNetworkCallback()
+            // Register one-time upstream NetworkCallback to eliminate per-connection Binder IPC scans
+            registerUpstreamNetworkCallback()
+        }
 
         _status.value = ServerStatus.STARTING
         _errorMessage.value = null
@@ -559,7 +573,7 @@ class HttpProxyServer(
                         try {
                             remoteSocket.trafficClass = 0x10 // IPTOS_LOWDELAY
                         } catch (_: Exception) {}
-                        val upstreamNetwork = getUpstreamNetwork()
+                        val upstreamNetwork = if (bypassUpstreamBinding) null else getUpstreamNetwork()
                         if (upstreamNetwork != null) {
                             try {
                                 upstreamNetwork.bindSocket(remoteSocket)
@@ -635,7 +649,7 @@ class HttpProxyServer(
                         try {
                             remoteSocket.trafficClass = 0x10 // IPTOS_LOWDELAY
                         } catch (_: Exception) {}
-                        val upstreamNetwork = getUpstreamNetwork()
+                        val upstreamNetwork = if (bypassUpstreamBinding) null else getUpstreamNetwork()
                         if (upstreamNetwork != null) {
                             try {
                                 upstreamNetwork.bindSocket(remoteSocket)

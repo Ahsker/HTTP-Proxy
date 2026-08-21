@@ -88,6 +88,12 @@ fun LogsPage(
         }
     }
 
+    // Traffic volume of the currently visible (filtered) sessions.
+    // bytesSent = data delivered to the client (download), bytesReceived = data received from the client (upload).
+    val totalDownloadBytes = remember(filteredLogs) { filteredLogs.sumOf { it.bytesSent } }
+    val totalUploadBytes = remember(filteredLogs) { filteredLogs.sumOf { it.bytesReceived } }
+    val totalVolumeBytes = totalDownloadBytes + totalUploadBytes
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -95,7 +101,7 @@ fun LogsPage(
     ) {
         Spacer(modifier = Modifier.height(6.dp))
 
-        // Top Control Header
+        // Traffic Volume Summary (replaces the duplicated page title — the top bar already labels this tab)
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -118,7 +124,7 @@ fun LogsPage(
                 Spacer(modifier = Modifier.width(10.dp))
                 Column {
                     Text(
-                        text = "Session Logs",
+                        text = NetworkUtils.formatBytes(totalVolumeBytes),
                         style = MaterialTheme.typography.titleMedium.copy(
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onBackground,
@@ -126,7 +132,7 @@ fun LogsPage(
                         )
                     )
                     Text(
-                        text = "${filteredLogs.size} of ${sessionLogs.size} requests shown",
+                        text = "Total volume • ${filteredLogs.size} of ${sessionLogs.size} requests",
                         style = MaterialTheme.typography.bodySmall.copy(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             fontSize = 11.sp
@@ -147,6 +153,27 @@ fun LogsPage(
                     )
                 }
             }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Upload / Download breakdown of the visible sessions
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            TrafficVolumeChip(
+                label = "Upload",
+                value = NetworkUtils.formatBytes(totalUploadBytes),
+                tint = NaturalOrangeUpload,
+                modifier = Modifier.weight(1f)
+            )
+            TrafficVolumeChip(
+                label = "Download",
+                value = NetworkUtils.formatBytes(totalDownloadBytes),
+                tint = NaturalGreenSuccess,
+                modifier = Modifier.weight(1f)
+            )
         }
 
         Spacer(modifier = Modifier.height(10.dp))
@@ -264,5 +291,48 @@ fun LogsPage(
             log = log,
             onDismiss = { selectedLogForDetails = null }
         )
+    }
+}
+
+@Composable
+private fun TrafficVolumeChip(
+    label: String,
+    value: String,
+    tint: Color,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        shape = RoundedCornerShape(14.dp),
+        color = tint.copy(alpha = 0.12f),
+        modifier = modifier
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(8.dp)
+                    .background(tint, CircleShape)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Column {
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 10.sp
+                    )
+                )
+                Text(
+                    text = value,
+                    style = MaterialTheme.typography.labelMedium.copy(
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontSize = 13.sp
+                    )
+                )
+            }
+        }
     }
 }

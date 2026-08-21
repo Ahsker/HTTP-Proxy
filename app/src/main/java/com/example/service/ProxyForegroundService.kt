@@ -245,17 +245,24 @@ class ProxyForegroundService : Service() {
 
             networkCallback = object : ConnectivityManager.NetworkCallback() {
                 override fun onAvailable(network: Network) {
-                    serverInstance.refreshUpstreamNetwork()
+                    // USB mode bypasses ConnectivityManager upstream wiring entirely
+                    if (preferences.loadControlMode() != ControlMode.USB_SINGLE_USER) {
+                        serverInstance.refreshUpstreamNetwork()
+                    }
                     checkAndRebindIfInterfaceChanged()
                 }
 
                 override fun onLost(network: Network) {
-                    serverInstance.refreshUpstreamNetwork()
+                    if (preferences.loadControlMode() != ControlMode.USB_SINGLE_USER) {
+                        serverInstance.refreshUpstreamNetwork()
+                    }
                     checkAndRebindIfInterfaceChanged()
                 }
 
                 override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) {
-                    serverInstance.refreshUpstreamNetwork()
+                    if (preferences.loadControlMode() != ControlMode.USB_SINGLE_USER) {
+                        serverInstance.refreshUpstreamNetwork()
+                    }
                 }
 
                 override fun onLinkPropertiesChanged(network: Network, linkProperties: LinkProperties) {

@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -338,7 +339,13 @@ fun MainScreen(viewModel: ProxyViewModel) {
                         viewModel.setControlMode(ControlMode.HOTSPOT_MULTI_USER)
                     }
                 },
-                hotspotActiveCount = clientSlots.count { it.isConnected },
+                // Only show the hotspot user badge when hotspot mode is active,
+                // so USB mode never displays stale hotspot client counts.
+                hotspotActiveCount = if (activeControlMode == ControlMode.HOTSPOT_MULTI_USER) {
+                    clientSlots.count { it.isConnected }
+                } else {
+                    0
+                },
                 isUsbTabEnabled = isUsbTabEnabled,
                 isHotspotTabEnabled = isHotspotTabEnabled,
                 onDisabledTabClick = {
@@ -471,7 +478,9 @@ fun FourTabBottomNavBar(
     Surface(
         color = MaterialTheme.colorScheme.surface,
         border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier
+            .fillMaxWidth()
+            .navigationBarsPadding() // Lift above the system gesture bar on edge-to-edge displays
     ) {
         Row(
             modifier = Modifier
