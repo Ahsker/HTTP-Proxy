@@ -1,9 +1,12 @@
 package com.example.data
 
 import android.content.Context
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import java.io.File
 import java.util.Calendar
 
@@ -27,12 +30,12 @@ object TrafficVolumeStore {
     private val _checkpoints = MutableStateFlow<List<VolumeCheckpoint>>(emptyList())
     val checkpoints: StateFlow<List<VolumeCheckpoint>> = _checkpoints.asStateFlow()
 
-    val cumulativeTotal: Long get() = _checkpoints.value.sumOf { it.downloadBytes + it.uploadBytes }
-
     fun init(context: Context) {
         if (file != null) return
         file = File(context.filesDir, FILE_NAME)
-        loadAndPurge()
+        CoroutineScope(Dispatchers.IO).launch {
+            loadAndPurge()
+        }
     }
 
     private fun startOfMonthMillis(): Long {

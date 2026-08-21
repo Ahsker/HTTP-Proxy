@@ -105,8 +105,8 @@ class HttpProxyServer(
 
     // Checkpoint accumulation for the persistent monthly volume ledger
     private val pendingCheckpointSessions = AtomicInteger(0)
-    private val pendingCheckpointSent = java.util.concurrent.atomic.AtomicLong(0)
-    private val pendingCheckpointReceived = java.util.concurrent.atomic.AtomicLong(0)
+    private val pendingCheckpointSent = AtomicLong(0L)
+    private val pendingCheckpointReceived = AtomicLong(0L)
 
     private val dnsCache = ConcurrentHashMap<String, DnsCacheEntry>()
     private val dnsNegativeCache = ConcurrentHashMap<String, Long>() // host -> failure timestamp (10s TTL)
