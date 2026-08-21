@@ -81,10 +81,8 @@ fun HotspotMultiUserPage(
     val hotspotIntf = remember(networkInterfaces) {
         networkInterfaces.find { it.type == InterfaceType.WIFI_HOTSPOT }
     }
-    val hotspotGatewayIp = hotspotIntf?.ipAddress
-        ?: networkInterfaces.find { it.type == InterfaceType.WIFI }?.ipAddress
-        ?: networkInterfaces.firstOrNull { it.type != InterfaceType.LOOPBACK && it.type != InterfaceType.MOBILE }?.ipAddress
-        ?: "192.168.43.1"
+    val isHotspotActive = hotspotIntf != null
+    val hotspotGatewayIp = hotspotIntf?.ipAddress ?: "192.168.43.1"
     val activeHotspotCount = remember(clientSlots) {
         clientSlots.count { it.isConnected }
     }
@@ -97,6 +95,74 @@ fun HotspotMultiUserPage(
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         Spacer(modifier = Modifier.height(2.dp))
+
+        // Hotspot Status Notice Banner
+        if (!isHotspotActive) {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
+                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onOpenHotspotSettings() }
+            ) {
+                Row(
+                    modifier = Modifier.padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.WifiTethering,
+                        contentDescription = "Hotspot Inactive",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Mobile Hotspot is OFF",
+                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "Tap here to turn ON Mobile Hotspot in Android Settings",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Icon(
+                        imageVector = Icons.Default.OpenInNew,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+        } else {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = NaturalGreenTint,
+                border = androidx.compose.foundation.BorderStroke(1.dp, NaturalGreenSuccess.copy(alpha = 0.5f)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.CheckCircle,
+                        contentDescription = "Hotspot Active",
+                        tint = NaturalGreenSuccess,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(
+                        text = "Hotspot Active on ${hotspotIntf.name} ($hotspotGatewayIp)",
+                        style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+                        color = NaturalGreenSuccess
+                    )
+                }
+            }
+        }
 
         // Error message if any
         if (serverStatus == ServerStatus.ERROR && errorMessage != null) {

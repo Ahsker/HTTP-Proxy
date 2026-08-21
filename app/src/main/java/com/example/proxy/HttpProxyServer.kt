@@ -3,14 +3,17 @@ package com.example.proxy
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import android.util.Base64
 import android.util.Log
 import com.example.model.ClientSlotStats
+import com.example.model.ControlMode
 import com.example.model.ProxyConfig
 import com.example.model.ServerStatus
 import com.example.model.SessionLog
 import com.example.model.TrafficSample
 import com.example.model.TrafficStats
+import com.example.network.NetworkUtils
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -55,6 +58,8 @@ class HttpProxyServer(
 
     private val _status = MutableStateFlow(ServerStatus.STOPPED)
     val status: StateFlow<ServerStatus> = _status.asStateFlow()
+    val isRunning: Boolean
+        get() = _status.value == ServerStatus.RUNNING
 
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
@@ -97,7 +102,18 @@ class HttpProxyServer(
     private var currentConfig: ProxyConfig = ProxyConfig()
 
     @Volatile
+    private var activeMode: ControlMode = ControlMode.HOTSPOT_MULTI_USER
+
+    @Volatile
+    private var activeClientPrefix: String? = null
+
+    @Volatile
     private var cachedUpstreamNetwork: Network? = null
+
+    private var upstreamNetworkCallback: ConnectivityManager.NetworkCallback? = null
+
+    val boundHost: String?
+        get() = currentConfig.host.takeIf { it.isNotBlank() && it != "0.0.0.0" }
 
     fun setUpstreamNetwork(network: Network?) {
         cachedUpstreamNetwork = network
@@ -130,7 +146,7 @@ class HttpProxyServer(
     }
 
     @Synchronized
-    fun start(config: ProxyConfig, cm: ConnectivityManager? = null) {
+    fun start(config: ProxyConfig, mode: ControlMode = ControlMode.HOTSPOT_MULTI_USER, cm: ConnectivityManager? = null) {
         if (cm != null) {
             this.connectivityManager = cm
         }
@@ -139,7 +155,18 @@ class HttpProxyServer(
         }
 
         currentConfig = config
+        activeMode = mode
+        activeClientPrefix = if (mode == ControlMode.HOTSPOT_MULTI_USER) {
+            NetworkUtils.hotspotPrefix()
+        } else {
+            NetworkUtils.usbPrefix()
+        }
+
         cachedUpstreamNetwork = findActiveUpstreamNetwork()
+
+        // Register one-time upstream NetworkCallback to eliminate per-connection Binder IPC scans
+        registerUpstreamNetworkCallback()
+
         _status.value = ServerStatus.STARTING
         _errorMessage.value = null
 
@@ -162,7 +189,7 @@ class HttpProxyServer(
                 serverSocket = socket
 
                 _status.value = ServerStatus.RUNNING
-                Log.i(tag, "Server listening on ${config.host}:${config.port}")
+                Log.i(tag, "Server listening on ${config.host}:${config.port} [Mode: $mode, Prefix: $activeClientPrefix]")
 
                 startStatsMonitor()
 
@@ -196,12 +223,53 @@ class HttpProxyServer(
         }
     }
 
+    private fun registerUpstreamNetworkCallback() {
+        try {
+            val cm = connectivityManager ?: return
+            unregisterUpstreamNetworkCallback()
+            val request = NetworkRequest.Builder()
+                .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
+                .build()
+
+            val cb = object : ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(network: Network) {
+                    cachedUpstreamNetwork = network
+                }
+
+                override fun onLost(network: Network) {
+                    if (cachedUpstreamNetwork == network) {
+                        cachedUpstreamNetwork = null
+                    }
+                }
+
+                override fun onCapabilitiesChanged(network: Network, networkCapabilities: NetworkCapabilities) {
+                    if (networkCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) {
+                        cachedUpstreamNetwork = network
+                    }
+                }
+            }
+            upstreamNetworkCallback = cb
+            cm.registerNetworkCallback(request, cb)
+        } catch (e: Exception) {
+            Log.w(tag, "Failed to register upstream NetworkCallback: ${e.message}")
+        }
+    }
+
+    private fun unregisterUpstreamNetworkCallback() {
+        try {
+            upstreamNetworkCallback?.let { connectivityManager?.unregisterNetworkCallback(it) }
+            upstreamNetworkCallback = null
+        } catch (_: Exception) {}
+    }
+
     @Synchronized
     fun stop() {
         stopInternal()
     }
 
     private fun stopInternal() {
+        unregisterUpstreamNetworkCallback()
         try {
             serverSocket?.close()
         } catch (_: Exception) {}
@@ -269,8 +337,11 @@ class HttpProxyServer(
     }
 
     private fun updateSlotsState() {
+        val prefix = activeClientPrefix
         val allTrackedIps = synchronized(clientSlotOrder) {
-            val nonLoopback = clientSlotOrder.filter { it != "127.0.0.1" && it != "localhost" }
+            val nonLoopback = clientSlotOrder.filter { ip ->
+                ip != "127.0.0.1" && ip != "localhost" && (prefix == null || ip.startsWith(prefix))
+            }
             val sorted = nonLoopback.distinct().sortedWith(
                 compareByDescending<String> { (activeClientsMap[it] ?: 0) > 0 }
                     .thenByDescending { perClientMap[it]?.lastActiveTimestamp ?: 0L }
@@ -340,6 +411,17 @@ class HttpProxyServer(
     private fun handleClientConnection(clientSocket: Socket) {
         serverScope.launch {
             val clientIp = clientSocket.inetAddress?.hostAddress ?: "127.0.0.1"
+            val isLoopback = clientIp == "127.0.0.1" || clientIp == "localhost" || clientSocket.inetAddress?.isLoopbackAddress == true
+
+            // Subnet-level isolation: If the incoming client belongs to a different interface subnet, refuse immediately
+            val prefix = activeClientPrefix
+            if (!isLoopback && prefix != null && !clientIp.startsWith(prefix)) {
+                try {
+                    clientSocket.close()
+                } catch (_: Exception) {}
+                return@launch
+            }
+
             val sessionId = UUID.randomUUID().toString()
             val startTime = System.currentTimeMillis()
 

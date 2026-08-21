@@ -9,6 +9,42 @@ import java.util.Collections
 
 object NetworkUtils {
 
+    /**
+     * Extracts the IPv4 subnet prefix (e.g. "10.169.192." or "192.168.43." or "192.168.42.")
+     * for any active interface matching the predicate.
+     */
+    fun getInterfacePrefix(intfNamePredicate: (String) -> Boolean): String? {
+        return try {
+            val nis = NetworkInterface.getNetworkInterfaces() ?: return null
+            for (ni in Collections.list(nis)) {
+                if (!ni.isUp) continue
+                val name = ni.name.lowercase()
+                if (!intfNamePredicate(name)) continue
+                val addr = ni.interfaceAddresses.firstOrNull { it.address is Inet4Address } ?: continue
+                val mask = addr.networkPrefixLength.toInt()
+                val prefixBytes = if (mask > 0) (mask / 8).coerceIn(1, 3) else 3
+                val ip = addr.address.hostAddress ?: continue
+                val parts = ip.split(".")
+                if (parts.size >= prefixBytes) {
+                    parts.take(prefixBytes).joinToString(".") + "."
+                } else {
+                    null
+                }
+            }
+            null
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    fun hotspotPrefix(): String? = getInterfacePrefix {
+        it.startsWith("ap") || it.startsWith("swlan") || it.startsWith("softap") || it.startsWith("wlan1") || it.contains("tether")
+    }
+
+    fun usbPrefix(): String? = getInterfacePrefix {
+        it.startsWith("rndis") || it.startsWith("usb") || it.startsWith("ncm")
+    }
+
     fun getAvailableNetworkInterfaces(): List<NetworkInterfaceInfo> {
         val result = mutableListOf<NetworkInterfaceInfo>()
         try {
@@ -23,7 +59,7 @@ object NetworkUtils {
                         val name = intf.name.lowercase()
                         val type = when {
                             name.startsWith("rndis") || name.startsWith("usb") || name.startsWith("ncm") -> InterfaceType.USB_TETHERING
-                            name.startsWith("ap") || name.startsWith("softap") || name.startsWith("swlan") || name.contains("tether") -> InterfaceType.WIFI_HOTSPOT
+                            name.startsWith("ap") || name.startsWith("softap") || name.startsWith("swlan") || name.startsWith("wlan1") || name.contains("tether") -> InterfaceType.WIFI_HOTSPOT
                             name.startsWith("wlan") || name.startsWith("wifi") -> InterfaceType.WIFI
                             name.startsWith("rmnet") || name.startsWith("ccmni") || name.startsWith("pdp") -> InterfaceType.MOBILE
                             name.startsWith("eth") -> InterfaceType.ETHERNET
@@ -109,7 +145,7 @@ object NetworkUtils {
     /**
      * Finds the concrete IP address to bind for the requested ControlMode.
      * USB mode binds only to USB tethering interfaces (rndis/usb/ncm).
-     * Hotspot mode binds to AP/Hotspot interfaces or non-cellular local network.
+     * Hotspot mode binds to AP/Hotspot interfaces.
      */
     fun getTargetBindIp(mode: ControlMode): String? {
         val interfaces = getAvailableNetworkInterfaces()
@@ -119,8 +155,6 @@ object NetworkUtils {
             }
             ControlMode.HOTSPOT_MULTI_USER -> {
                 interfaces.firstOrNull { it.type == InterfaceType.WIFI_HOTSPOT }?.ipAddress
-                    ?: interfaces.firstOrNull { it.type == InterfaceType.WIFI }?.ipAddress
-                    ?: interfaces.firstOrNull { it.type != InterfaceType.LOOPBACK && it.type != InterfaceType.MOBILE }?.ipAddress
             }
         }
     }

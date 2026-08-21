@@ -119,22 +119,22 @@ class ProxyForegroundService : Service() {
 
         val targetIp = NetworkUtils.getTargetBindIp(mode)
         if (targetIp == null) {
-            val errorMsg = when (mode) {
-                ControlMode.USB_SINGLE_USER ->
-                    "USB Tethering not active. Connect USB cable and enable USB Tethering in Settings."
-                ControlMode.HOTSPOT_MULTI_USER ->
-                    "Wi-Fi Hotspot not active. Enable Hotspot in Android Settings."
+            val errorMsg = if (mode == ControlMode.USB_SINGLE_USER) {
+                "USB tethering not active — plug in the cable first"
+            } else {
+                "Hotspot not active — turn it on first"
             }
             serverInstance.setError(errorMsg)
             val notification = buildNotification("HTTP Proxy Error", errorMsg)
             val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             manager.notify(NOTIFICATION_ID, notification)
+            stopSelf()
             return
         }
 
         lastBoundIp = targetIp
         val effectiveConfig = config.copy(host = targetIp)
-        serverInstance.start(effectiveConfig, cm)
+        serverInstance.start(effectiveConfig, mode, cm)
 
         // Observe server stats and update notification dynamically
         notificationJob?.cancel()
@@ -268,24 +268,27 @@ class ProxyForegroundService : Service() {
         }
     }
 
+    private var rebindJob: Job? = null
+
     private fun checkAndRebindIfInterfaceChanged() {
         val currentStatus = serverInstance.status.value
         if (currentStatus != ServerStatus.RUNNING && currentStatus != ServerStatus.ERROR) return
-        val mode = preferences.loadControlMode()
-        val freshIp = NetworkUtils.getTargetBindIp(mode)
+        
+        rebindJob?.cancel()
+        rebindJob = serviceScope.launch {
+            delay(1500) // Allow DHCP and OS interface stack to settle
+            val mode = preferences.loadControlMode()
+            val freshIp = NetworkUtils.getTargetBindIp(mode)
+            val currentBind = serverInstance.boundHost ?: lastBoundIp
 
-        if (freshIp != null && freshIp != lastBoundIp) {
-            Log.i(TAG, "Network interface IP changed from $lastBoundIp to $freshIp. Auto-rebinding proxy...")
-            serviceScope.launch {
-                delay(600) // Debounce rapid network state changes
-                val confirmedIp = NetworkUtils.getTargetBindIp(mode)
-                if (confirmedIp != null && confirmedIp != lastBoundIp) {
-                    val config = preferences.loadConfig()
-                    lastBoundIp = confirmedIp
-                    val effectiveConfig = config.copy(host = confirmedIp)
-                    serverInstance.stop()
-                    serverInstance.start(effectiveConfig, connectivityManager)
-                }
+            if (serverInstance.isRunning && freshIp != null && freshIp != currentBind) {
+                Log.i(TAG, "Network interface IP changed from $currentBind to $freshIp. Auto-rebinding proxy...")
+                val config = preferences.loadConfig()
+                lastBoundIp = freshIp
+                val effectiveConfig = config.copy(host = freshIp)
+                serverInstance.stop()
+                delay(500)
+                serverInstance.start(effectiveConfig, mode, connectivityManager)
             }
         }
     }
