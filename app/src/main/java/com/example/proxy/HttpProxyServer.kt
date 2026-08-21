@@ -28,6 +28,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.io.InputStream
 import java.io.OutputStream
+import java.net.Inet4Address
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.ServerSocket
@@ -38,6 +39,8 @@ import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
+
+private data class DnsCacheEntry(val address: InetAddress, val expiresAt: Long)
 
 /**
  * Ultra-low latency, high-throughput asynchronous HTTP/HTTPS Proxy Server.
@@ -98,6 +101,9 @@ class HttpProxyServer(
     }
     private val perClientMap = ConcurrentHashMap<String, PerClientTracker>()
     private val clientSlotOrder = mutableListOf<String>()
+
+    private val dnsCache = ConcurrentHashMap<String, DnsCacheEntry>()
+    private val DNS_TTL_MS = 60_000L // 60 seconds TTL for DNS resolution caching
 
     private var currentConfig: ProxyConfig = ProxyConfig()
 
@@ -562,7 +568,7 @@ class HttpProxyServer(
                                 Log.w(tag, "bindSocket failed: ${e.message}")
                             }
                         }
-                        remoteSocket.soTimeout = 60000
+                        remoteSocket.soTimeout = 30000
                         val targetInetAddress = resolveAddress(targetHost, upstreamNetwork)
                         remoteSocket.connect(InetSocketAddress(targetInetAddress, targetPort), 10000)
 
@@ -870,36 +876,42 @@ class HttpProxyServer(
     }
 
     /**
-     * Resolves domain names (DNS) directly through the upstream network (e.g., mobile carrier)
-     * using network.getAllByName(host) to prevent 21-second timeouts in Hotspot mode.
+     * Resolves domain names (DNS) through the upstream network with a high-performance
+     * in-memory TTL cache to eliminate per-connection carrier DNS latency bottlenecks.
      */
     private fun resolveAddress(host: String, network: Network?): InetAddress {
         // Fast path for raw IPv4 or IPv6 literals without triggering DNS lookups
         if (host.matches(Regex("^\\d{1,3}(\\.\\d{1,3}){3}$")) || host.contains(":")) {
-            return try {
-                InetAddress.getByName(host)
-            } catch (_: Exception) {
-                InetAddress.getByName(host)
-            }
+            return InetAddress.getByName(host)
         }
 
+        // Check DNS cache first (0ms hit)
+        val now = System.currentTimeMillis()
+        val cached = dnsCache[host]
+        if (cached != null && now < cached.expiresAt) {
+            return cached.address
+        }
+
+        // Cache miss — resolve and store
         return try {
-            if (network != null) {
-                // Force DNS resolution using the upstream mobile/cellular network
-                val addresses = network.getAllByName(host)
-                if (addresses.isNotEmpty()) {
-                    Log.d(tag, "Resolved $host via upstream mobile DNS -> ${addresses[0].hostAddress}")
-                    addresses[0]
-                } else {
-                    network.getByName(host)
-                }
+            val addresses = if (network != null) {
+                network.getAllByName(host)
             } else {
-                InetAddress.getByName(host)
+                InetAddress.getAllByName(host)
             }
+            // Prefer IPv4 address to eliminate carrier IPv6 AAAA timeout stalls
+            val result = addresses.firstOrNull { it is Inet4Address }
+                ?: addresses.firstOrNull()
+                ?: throw java.net.UnknownHostException(host)
+
+            dnsCache[host] = DnsCacheEntry(result, now + DNS_TTL_MS)
+            result
         } catch (e: Exception) {
-            Log.d(tag, "Upstream DNS resolution for $host failed (${e.message}), fallback to default DNS")
+            // Fallback to default resolver
             try {
-                InetAddress.getByName(host)
+                val result = InetAddress.getByName(host)
+                dnsCache[host] = DnsCacheEntry(result, now + DNS_TTL_MS)
+                result
             } catch (fallbackEx: Exception) {
                 Log.e(tag, "All DNS resolution failed for $host: ${fallbackEx.message}")
                 throw fallbackEx
