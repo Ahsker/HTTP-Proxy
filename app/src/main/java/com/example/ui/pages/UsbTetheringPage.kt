@@ -84,7 +84,12 @@ fun UsbTetheringPage(
     val usbIntf = remember(networkInterfaces) {
         networkInterfaces.find { it.type == InterfaceType.USB_TETHERING }
     }
-    val effectiveUsbIp = usbIntf?.ipAddress ?: suggestedIp
+    val liveBoundHost = com.example.service.ProxyForegroundService.serverInstance.boundHost
+    val effectiveUsbIp = if (serverStatus == ServerStatus.RUNNING && liveBoundHost != null) {
+        liveBoundHost
+    } else {
+        usbIntf?.ipAddress ?: suggestedIp
+    }
 
     Column(
         modifier = modifier
@@ -94,6 +99,43 @@ fun UsbTetheringPage(
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         Spacer(modifier = Modifier.height(2.dp))
+
+        // USB Tethering Not Detected Warning Banner (when stopped and no USB interface found)
+        if (usbIntf == null && serverStatus != ServerStatus.RUNNING) {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
+                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onOpenTetherSettings() }
+            ) {
+                Row(
+                    modifier = Modifier.padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Usb,
+                        contentDescription = "USB Inactive",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "USB Tethering is not detected",
+                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "Plug in your USB cable and enable USB Tethering in Android Settings",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        }
 
         // Error message if any
         if (serverStatus == ServerStatus.ERROR && errorMessage != null) {
@@ -120,7 +162,8 @@ fun UsbTetheringPage(
             uptimeSeconds = uptimeSeconds,
             stats = trafficStats,
             onToggleServer = onToggleServer,
-            onOpenSettings = onOpenSettings
+            onOpenSettings = onOpenSettings,
+            onCopy = onCopy
         )
 
         // 2. Dedicated USB Tethering Direct Controller

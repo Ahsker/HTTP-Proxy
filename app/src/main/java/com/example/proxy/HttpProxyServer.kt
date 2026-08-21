@@ -103,7 +103,9 @@ class HttpProxyServer(
     private val clientSlotOrder = mutableListOf<String>()
 
     private val dnsCache = ConcurrentHashMap<String, DnsCacheEntry>()
+    private val dnsNegativeCache = ConcurrentHashMap<String, Long>() // host -> failure timestamp (10s TTL)
     private val DNS_TTL_MS = 60_000L // 60 seconds TTL for DNS resolution caching
+    private val DNS_NEG_TTL_MS = 10_000L // 10 seconds negative DNS cache TTL
 
     private var currentConfig: ProxyConfig = ProxyConfig()
 
@@ -389,7 +391,19 @@ class HttpProxyServer(
 
     private fun updateSlotsState() {
         val prefix = activeClientPrefix
+        val now = System.currentTimeMillis()
+        val tenMinutesMs = 10 * 60 * 1000L
+
+        // Evict stale client trackers (idle > 10 min and 0 active sockets) to prevent unbounded memory growth
+        val staleIps = perClientMap.filter { (ip, tracker) ->
+            (activeClientsMap[ip] ?: 0) == 0 && (now - tracker.lastActiveTimestamp > tenMinutesMs)
+        }.keys
+        for (staleIp in staleIps) {
+            perClientMap.remove(staleIp)
+        }
+
         val allTrackedIps = synchronized(clientSlotOrder) {
+            clientSlotOrder.removeAll(staleIps)
             val nonLoopback = clientSlotOrder.filter { ip ->
                 ip != "127.0.0.1" && ip != "localhost" && (prefix == null || ip.startsWith(prefix))
             }
@@ -559,10 +573,18 @@ class HttpProxyServer(
 
                 if (method == "CONNECT") {
                     isHttps = true
-                    // HTTPS Tunnel
-                    val hostPort = targetUri.split(":")
-                    targetHost = hostPort[0]
-                    targetPort = if (hostPort.size > 1) hostPort[1].toIntOrNull() ?: 443 else 443
+                    // HTTPS Tunnel - support IPv6 bracketed hosts and standard host:port
+                    val (targetHostParsed, targetPortParsed) = if (targetUri.startsWith("[")) {
+                        val h = targetUri.removePrefix("[").substringBefore("]")
+                        val p = targetUri.substringAfter("]:", "443").toIntOrNull() ?: 443
+                        h to p
+                    } else {
+                        val h = targetUri.substringBefore(":")
+                        val p = targetUri.substringAfter(":", "443").toIntOrNull() ?: 443
+                        h to p
+                    }
+                    targetHost = targetHostParsed
+                    targetPort = targetPortParsed
 
                     var remoteSocket: Socket? = null
                     try {
@@ -577,7 +599,7 @@ class HttpProxyServer(
                         if (upstreamNetwork != null) {
                             try {
                                 upstreamNetwork.bindSocket(remoteSocket)
-                                Log.d(tag, "Bound HTTPS socket to upstream network: $upstreamNetwork")
+                                Log.v(tag, "Bound HTTPS socket to upstream network: $upstreamNetwork")
                             } catch (e: Exception) {
                                 Log.w(tag, "bindSocket failed: ${e.message}")
                             }
@@ -653,7 +675,7 @@ class HttpProxyServer(
                         if (upstreamNetwork != null) {
                             try {
                                 upstreamNetwork.bindSocket(remoteSocket)
-                                Log.d(tag, "Bound HTTP socket to upstream network: $upstreamNetwork")
+                                Log.v(tag, "Bound HTTP socket to upstream network: $upstreamNetwork")
                             } catch (e: Exception) {
                                 Log.w(tag, "bindSocket failed: ${e.message}")
                             }
@@ -828,7 +850,7 @@ class HttpProxyServer(
         } catch (_: SocketTimeoutException) {
             // Idle timeout
         } catch (e: Exception) {
-            Log.d(tag, "Pipe stream ended: ${e.message}")
+            Log.v(tag, "Pipe stream ended: ${e.message}")
         } finally {
             if (uncommittedBytes > 0) {
                 flushStats(isClientToRemote, clientIp, uncommittedBytes)
@@ -891,7 +913,7 @@ class HttpProxyServer(
 
     /**
      * Resolves domain names (DNS) through the upstream network with a high-performance
-     * in-memory TTL cache to eliminate per-connection carrier DNS latency bottlenecks.
+     * in-memory TTL cache and negative DNS cache to eliminate per-connection carrier latency.
      */
     private fun resolveAddress(host: String, network: Network?): InetAddress {
         // Fast path for raw IPv4 or IPv6 literals without triggering DNS lookups
@@ -899,8 +921,15 @@ class HttpProxyServer(
             return InetAddress.getByName(host)
         }
 
-        // Check DNS cache first (0ms hit)
         val now = System.currentTimeMillis()
+
+        // Check negative cache first (10s TTL)
+        val failTime = dnsNegativeCache[host]
+        if (failTime != null && (now - failTime < DNS_NEG_TTL_MS)) {
+            throw java.net.UnknownHostException("$host (cached failure)")
+        }
+
+        // Check DNS cache first (0ms hit)
         val cached = dnsCache[host]
         if (cached != null && now < cached.expiresAt) {
             return cached.address
@@ -919,15 +948,18 @@ class HttpProxyServer(
                 ?: throw java.net.UnknownHostException(host)
 
             dnsCache[host] = DnsCacheEntry(result, now + DNS_TTL_MS)
+            dnsNegativeCache.remove(host)
             result
         } catch (e: Exception) {
             // Fallback to default resolver
             try {
                 val result = InetAddress.getByName(host)
                 dnsCache[host] = DnsCacheEntry(result, now + DNS_TTL_MS)
+                dnsNegativeCache.remove(host)
                 result
             } catch (fallbackEx: Exception) {
-                Log.e(tag, "All DNS resolution failed for $host: ${fallbackEx.message}")
+                dnsNegativeCache[host] = now
+                Log.w(tag, "All DNS resolution failed for $host: ${fallbackEx.message}")
                 throw fallbackEx
             }
         }

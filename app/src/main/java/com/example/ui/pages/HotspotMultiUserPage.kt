@@ -87,6 +87,13 @@ fun HotspotMultiUserPage(
         clientSlots.count { it.isConnected }
     }
 
+    val liveBoundHost = com.example.service.ProxyForegroundService.serverInstance.boundHost
+    val effectiveHotspotIp = if (serverStatus == ServerStatus.RUNNING && liveBoundHost != null) {
+        liveBoundHost
+    } else {
+        hotspotGatewayIp
+    }
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -156,7 +163,7 @@ fun HotspotMultiUserPage(
                     )
                     Spacer(modifier = Modifier.width(10.dp))
                     Text(
-                        text = "Hotspot Active on ${hotspotIntf.name} ($hotspotGatewayIp)",
+                        text = "Hotspot Active on ${hotspotIntf.name} ($effectiveHotspotIp)",
                         style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
                         color = NaturalGreenSuccess
                     )
@@ -185,17 +192,18 @@ fun HotspotMultiUserPage(
         NaturalHeroCard(
             status = serverStatus,
             config = config,
-            suggestedIp = hotspotGatewayIp,
+            suggestedIp = effectiveHotspotIp,
             uptimeSeconds = uptimeSeconds,
             stats = trafficStats,
             onToggleServer = onToggleServer,
-            onOpenSettings = onOpenSettings
+            onOpenSettings = onOpenSettings,
+            onCopy = onCopy
         )
 
         // 2. Dedicated Multi-User Hotspot Card with 3 Sub-Tabs
         HotspotMultiUserCard(
             clientSlots = clientSlots,
-            gatewayIp = hotspotGatewayIp,
+            gatewayIp = effectiveHotspotIp,
             port = config.port,
             onCopy = onCopy,
             onOpenHotspotSettings = onOpenHotspotSettings

@@ -93,6 +93,7 @@ fun LogsPage(
     val totalDownloadBytes = remember(filteredLogs) { filteredLogs.sumOf { it.bytesSent } }
     val totalUploadBytes = remember(filteredLogs) { filteredLogs.sumOf { it.bytesReceived } }
     val totalVolumeBytes = totalDownloadBytes + totalUploadBytes
+    val allSessionsTotalBytes = remember(sessionLogs) { sessionLogs.sumOf { it.bytesSent + it.bytesReceived } }
 
     Column(
         modifier = modifier
@@ -132,7 +133,11 @@ fun LogsPage(
                         )
                     )
                     Text(
-                        text = "Total volume • ${filteredLogs.size} of ${sessionLogs.size} requests",
+                        text = if (filteredLogs.size < sessionLogs.size) {
+                            "Filtered volume (${NetworkUtils.formatBytes(allSessionsTotalBytes)} total) • ${filteredLogs.size} of ${sessionLogs.size} requests"
+                        } else {
+                            "Total volume • ${sessionLogs.size} requests"
+                        },
                         style = MaterialTheme.typography.bodySmall.copy(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             fontSize = 11.sp

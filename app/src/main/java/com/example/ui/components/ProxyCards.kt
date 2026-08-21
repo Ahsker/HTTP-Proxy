@@ -95,6 +95,7 @@ fun NaturalHeroCard(
     stats: TrafficStats,
     onToggleServer: () -> Unit,
     onOpenSettings: () -> Unit,
+    onCopy: ((label: String, text: String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val isRunning = status == ServerStatus.RUNNING
@@ -319,6 +320,16 @@ fun NaturalHeroCard(
                         .padding(horizontal = 14.dp, vertical = 10.dp)
                 ) {
                     // Row 1: IP Address and Port with Edit Action
+                    val liveBoundHost = com.example.service.ProxyForegroundService.serverInstance.boundHost
+                    val displayIp = if (isRunning && liveBoundHost != null) {
+                        liveBoundHost
+                    } else if (config.host == "0.0.0.0" || config.host.isBlank()) {
+                        suggestedIp
+                    } else {
+                        config.host
+                    }
+                    val fullAddress = "$displayIp:${config.port}"
+
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -328,19 +339,36 @@ fun NaturalHeroCard(
                         Column(
                             modifier = Modifier
                                 .weight(1f)
-                                .clickable { onOpenSettings() }
+                                .clickable {
+                                    if (onCopy != null) {
+                                        onCopy("Proxy Address", fullAddress)
+                                    } else {
+                                        onOpenSettings()
+                                    }
+                                }
                         ) {
-                            Text(
-                                text = "HOST IP",
-                                style = MaterialTheme.typography.labelSmall.copy(
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    fontSize = 9.sp,
-                                    letterSpacing = 0.6.sp
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = if (isRunning) "BOUND IP (LIVE)" else "HOST IP",
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isRunning) NaturalGreenSuccess else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        fontSize = 9.sp,
+                                        letterSpacing = 0.6.sp
+                                    )
                                 )
-                            )
+                                if (isRunning && onCopy != null) {
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Icon(
+                                        imageVector = Icons.Default.ContentCopy,
+                                        contentDescription = "Copy Address",
+                                        tint = NaturalGreenSuccess,
+                                        modifier = Modifier.size(10.dp)
+                                    )
+                                }
+                            }
                             Text(
-                                text = if (config.host == "0.0.0.0") suggestedIp else config.host,
+                                text = displayIp,
                                 style = MaterialTheme.typography.bodyMedium.copy(
                                     fontWeight = FontWeight.Bold,
                                     fontFamily = FontFamily.Monospace,
@@ -387,18 +415,35 @@ fun NaturalHeroCard(
                             )
                         }
 
-                        IconButton(
-                            onClick = onOpenSettings,
-                            modifier = Modifier
-                                .size(28.dp)
-                                .padding(start = 4.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Edit,
-                                contentDescription = "Edit Settings",
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(14.dp)
-                            )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (isRunning && onCopy != null) {
+                                IconButton(
+                                    onClick = { onCopy("Proxy Address", fullAddress) },
+                                    modifier = Modifier
+                                        .size(28.dp)
+                                        .padding(start = 2.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.ContentCopy,
+                                        contentDescription = "Copy Proxy Address",
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                }
+                            }
+                            IconButton(
+                                onClick = onOpenSettings,
+                                modifier = Modifier
+                                    .size(28.dp)
+                                    .padding(start = 2.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Edit,
+                                    contentDescription = "Edit Settings",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                            }
                         }
                     }
 
