@@ -411,6 +411,7 @@ fun MainScreen(viewModel: ProxyViewModel) {
                 3 -> WindowsSetupPage(
                     port = config.port,
                     interfaces = networkInterfaces,
+                    volumeCheckpoints = volumeCheckpoints,
                     onCopy = { label, text -> viewModel.copyToClipboard(label, text) },
                     onOpenTetherSettings = { viewModel.openTetheringSettings() },
                     onOpenHotspotSettings = { viewModel.openHotspotSettings() }

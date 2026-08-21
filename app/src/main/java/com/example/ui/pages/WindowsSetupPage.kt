@@ -1,5 +1,6 @@
 package com.example.ui.pages
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -18,6 +19,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Cable
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Code
@@ -34,6 +36,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -58,17 +61,21 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.VolumeCheckpoint
 import com.example.model.InterfaceType
 import com.example.model.NetworkInterfaceInfo
+import com.example.network.NetworkUtils
 import com.example.ui.components.CodeSnippetBox
 import com.example.ui.components.StepHeader
 import com.example.ui.theme.NaturalGreenSuccess
 import com.example.ui.theme.NaturalGreenTint
+import java.util.Calendar
 
 @Composable
 fun WindowsSetupPage(
     port: Int,
     interfaces: List<NetworkInterfaceInfo>,
+    volumeCheckpoints: List<VolumeCheckpoint>,
     onCopy: (label: String, text: String) -> Unit,
     onOpenTetherSettings: () -> Unit,
     onOpenHotspotSettings: () -> Unit,
@@ -122,7 +129,7 @@ fun WindowsSetupPage(
             Spacer(modifier = Modifier.width(12.dp))
             Column {
                 Text(
-                    text = "Windows Setup Guide",
+                    text = "Windows Setup Guide & Report",
                     style = MaterialTheme.typography.titleMedium.copy(
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onBackground,
@@ -130,7 +137,7 @@ fun WindowsSetupPage(
                     )
                 )
                 Text(
-                    text = "Configure PC for USB or Wi-Fi Hotspot Proxy",
+                    text = "PC proxy setup & monthly data usage",
                     style = MaterialTheme.typography.bodySmall.copy(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 12.sp
@@ -276,7 +283,210 @@ fun WindowsSetupPage(
             }
         }
 
+        // Monthly Usage Report (collapsible, below the setup guide)
+        MonthlyUsageReportSection(checkpoints = volumeCheckpoints)
+
         Spacer(modifier = Modifier.height(24.dp))
+    }
+}
+
+@Composable
+private fun MonthlyUsageReportSection(checkpoints: List<VolumeCheckpoint>) {
+    var expanded by remember { mutableStateOf(false) }
+
+    val monthTotal = remember(checkpoints) {
+        checkpoints.sumOf { it.downloadBytes + it.uploadBytes }
+    }
+
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { expanded = !expanded }
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.BarChart,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Monthly Usage Report",
+                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "${NetworkUtils.formatBytes(monthTotal)} recorded this month",
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 11.sp
+                        )
+                    )
+                }
+                Icon(
+                    imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    contentDescription = if (expanded) "Collapse report" else "Expand report",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+
+            if (expanded) {
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+                MonthlyCalendarGrid(checkpoints = checkpoints)
+            }
+        }
+    }
+}
+
+@Composable
+private fun MonthlyCalendarGrid(checkpoints: List<VolumeCheckpoint>) {
+    val cal = Calendar.getInstance()
+    val today = cal.get(Calendar.DAY_OF_MONTH)
+    val daysInMonth = cal.getActualMaximum(Calendar.DAY_OF_MONTH)
+
+    // Aggregate checkpoints per day-of-month
+    val dailyTotals: Map<Int, Long> = remember(checkpoints) {
+        val c = Calendar.getInstance()
+        checkpoints.groupBy { cp ->
+            c.timeInMillis = cp.timestamp
+            c.get(Calendar.DAY_OF_MONTH)
+        }.mapValues { (_, list) -> list.sumOf { it.downloadBytes + it.uploadBytes } }
+    }
+
+    // Leading empty cells so day 1 lands on its weekday column (Sunday-first)
+    cal.set(Calendar.DAY_OF_MONTH, 1)
+    val leadingBlanks = cal.get(Calendar.DAY_OF_WEEK) - 1
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 10.dp)
+    ) {
+        // Weekday header
+        Row(modifier = Modifier.fillMaxWidth()) {
+            listOf("S", "M", "T", "W", "T", "F", "S").forEach { label ->
+                Box(
+                    modifier = Modifier.weight(1f).padding(2.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = label,
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 10.sp
+                        )
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(4.dp))
+
+        // Day cells
+        var dayCounter = 1
+        val totalCells = leadingBlanks + daysInMonth
+        val rowCount = (totalCells + 6) / 7
+        for (row in 0 until rowCount) {
+            Row(modifier = Modifier.fillMaxWidth()) {
+                for (col in 0 until 7) {
+                    val cellIndex = row * 7 + col
+                    if (cellIndex < leadingBlanks || dayCounter > daysInMonth) {
+                        Box(modifier = Modifier.weight(1f).height(54.dp))
+                    } else {
+                        val day = dayCounter
+                        CalendarDayCell(
+                            day = day,
+                            bytes = dailyTotals[day] ?: 0L,
+                            isToday = day == today,
+                            modifier = Modifier.weight(1f)
+                        )
+                        dayCounter++
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CalendarDayCell(
+    day: Int,
+    bytes: Long,
+    isToday: Boolean,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        shape = RoundedCornerShape(8.dp),
+        color = if (isToday) NaturalGreenTint else MaterialTheme.colorScheme.surface,
+        border = BorderStroke(
+            1.dp,
+            if (isToday) NaturalGreenSuccess else MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+        ),
+        modifier = modifier.padding(2.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(50.dp)
+                .padding(vertical = 4.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = "$day",
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 10.sp,
+                    color = if (isToday) NaturalGreenSuccess else MaterialTheme.colorScheme.onSurface
+                )
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            if (isToday) {
+                // Today's figure is not final — checkpoints are batched
+                Text(
+                    text = "Pending",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 9.sp,
+                        color = NaturalGreenSuccess
+                    )
+                )
+            } else if (bytes > 0) {
+                Text(
+                    text = formatTrafficMb(bytes),
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontSize = 9.sp,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                )
+            } else {
+                Text(
+                    text = "—",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontSize = 9.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                    )
+                )
+            }
+        }
+    }
+}
+
+private fun formatTrafficMb(bytes: Long): String {
+    return if (bytes >= 1_048_576L) {
+        String.format(java.util.Locale.US, "%.1f MB", bytes / 1_048_576.0)
+    } else {
+        String.format(java.util.Locale.US, "%d KB", bytes / 1024)
     }
 }
 
