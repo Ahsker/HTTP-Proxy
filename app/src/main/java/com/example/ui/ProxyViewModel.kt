@@ -11,6 +11,8 @@ import android.widget.Toast
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.ProxyPreferences
+import com.example.data.TrafficVolumeStore
+import com.example.data.VolumeCheckpoint
 import com.example.model.ClientSlotStats
 import com.example.model.ControlMode
 import com.example.model.NetworkInterfaceInfo
@@ -57,6 +59,7 @@ class ProxyViewModel(application: Application) : AndroidViewModel(application) {
     val connectedClients: StateFlow<Set<String>> = server.connectedClients
     val clientSlots: StateFlow<List<ClientSlotStats>> = server.clientSlots
     val sessionLogs: StateFlow<List<SessionLog>> = server.sessionLogs
+    val volumeCheckpoints: StateFlow<List<VolumeCheckpoint>> = TrafficVolumeStore.checkpoints
 
     private val _networkInterfaces = MutableStateFlow<List<NetworkInterfaceInfo>>(emptyList())
     val networkInterfaces: StateFlow<List<NetworkInterfaceInfo>> = _networkInterfaces.asStateFlow()
@@ -73,6 +76,7 @@ class ProxyViewModel(application: Application) : AndroidViewModel(application) {
     private var serverStartTimestamp: Long = 0L
 
     init {
+        TrafficVolumeStore.init(application)
         server.connectivityManager = application.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
         refreshNetworkInterfaces()
 

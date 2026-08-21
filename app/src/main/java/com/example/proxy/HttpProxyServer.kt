@@ -6,6 +6,7 @@ import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import android.util.Base64
 import android.util.Log
+import com.example.data.TrafficVolumeStore
 import com.example.model.ClientSlotStats
 import com.example.model.ControlMode
 import com.example.model.ProxyConfig
@@ -101,6 +102,11 @@ class HttpProxyServer(
     }
     private val perClientMap = ConcurrentHashMap<String, PerClientTracker>()
     private val clientSlotOrder = mutableListOf<String>()
+
+    // Checkpoint accumulation for the persistent monthly volume ledger
+    private val pendingCheckpointSessions = AtomicInteger(0)
+    private val pendingCheckpointSent = java.util.concurrent.atomic.AtomicLong(0)
+    private val pendingCheckpointReceived = java.util.concurrent.atomic.AtomicLong(0)
 
     private val dnsCache = ConcurrentHashMap<String, DnsCacheEntry>()
     private val dnsNegativeCache = ConcurrentHashMap<String, Long>() // host -> failure timestamp (10s TTL)
@@ -297,6 +303,7 @@ class HttpProxyServer(
     }
 
     private fun stopInternal() {
+        flushVolumeCheckpoint()
         unregisterUpstreamNetworkCallback()
         try {
             serverSocket?.close()
@@ -1026,11 +1033,33 @@ class HttpProxyServer(
             val updated = ArrayList<SessionLog>(currentList.size + 1)
             updated.add(log)
             updated.addAll(currentList)
-            if (updated.size > 200) {
-                updated.subList(0, 200).toList()
+            // At 200 entries, drop the oldest 100 (keep newest 100)
+            if (updated.size >= 200) {
+                updated.subList(0, 100).toList()
             } else {
                 updated
             }
+        }
+
+        pendingCheckpointSessions.incrementAndGet()
+        pendingCheckpointSent.addAndGet(log.bytesSent)
+        pendingCheckpointReceived.addAndGet(log.bytesReceived)
+        if (pendingCheckpointSessions.get() >= 100) {
+            flushVolumeCheckpoint()
+        }
+    }
+
+    @Synchronized
+    private fun flushVolumeCheckpoint() {
+        val sessions = pendingCheckpointSessions.getAndSet(0)
+        val sent = pendingCheckpointSent.getAndSet(0)
+        val received = pendingCheckpointReceived.getAndSet(0)
+        if (sessions > 0) {
+            TrafficVolumeStore.appendCheckpoint(
+                downloadBytes = sent,      // bytesSent = proxy -> client
+                uploadBytes = received,    // bytesReceived = client -> proxy
+                sessionCount = sessions
+            )
         }
     }
 

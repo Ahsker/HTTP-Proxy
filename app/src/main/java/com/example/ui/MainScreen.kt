@@ -95,6 +95,7 @@ fun MainScreen(viewModel: ProxyViewModel) {
     val connectedClients by viewModel.connectedClients.collectAsStateWithLifecycle()
     val clientSlots by viewModel.clientSlots.collectAsStateWithLifecycle()
     val sessionLogs by viewModel.sessionLogs.collectAsStateWithLifecycle()
+    val volumeCheckpoints by viewModel.volumeCheckpoints.collectAsStateWithLifecycle()
     val networkInterfaces by viewModel.networkInterfaces.collectAsStateWithLifecycle()
     val isTesting by viewModel.isTesting.collectAsStateWithLifecycle()
     val testResult by viewModel.testResult.collectAsStateWithLifecycle()
@@ -402,6 +403,7 @@ fun MainScreen(viewModel: ProxyViewModel) {
 
                 2 -> LogsPage(
                     sessionLogs = sessionLogs,
+                    volumeCheckpoints = volumeCheckpoints,
                     onClearLogs = { viewModel.clearLogs() },
                     onCopy = { label, text -> viewModel.copyToClipboard(label, text) }
                 )

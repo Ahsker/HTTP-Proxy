@@ -23,6 +23,8 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DesktopWindows
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.HelpOutline
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Settings
@@ -44,6 +46,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -72,6 +75,7 @@ fun WindowsSetupPage(
     modifier: Modifier = Modifier
 ) {
     var selectedTab by remember { mutableIntStateOf(0) }
+    var guideExpanded by remember { mutableStateOf(true) }
     val tabs = listOf("🔌 USB", "📡 Wi-Fi", "💻 PC", "🛠️ CLI")
 
     val hotspotIp = remember(interfaces) {
@@ -191,56 +195,83 @@ fun WindowsSetupPage(
             }
         }
 
-        // Tabs
+        // Tabs (collapsible)
         Surface(
             shape = RoundedCornerShape(16.dp),
             color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
         ) {
-            TabRow(
-                selectedTabIndex = selectedTab,
-                containerColor = Color.Transparent,
-                contentColor = MaterialTheme.colorScheme.primary,
-                indicator = { tabPositions ->
-                    TabRowDefaults.SecondaryIndicator(
-                        Modifier.tabIndicatorOffset(tabPositions[selectedTab]),
-                        color = MaterialTheme.colorScheme.primary,
-                        height = 3.dp
+            Column {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { guideExpanded = !guideExpanded }
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Windows Setup Guide",
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                        color = MaterialTheme.colorScheme.onSurface
                     )
-                },
-                divider = {}
-            ) {
-                tabs.forEachIndexed { index, title ->
-                    Tab(
-                        selected = selectedTab == index,
-                        onClick = { selectedTab = index },
-                        text = {
-                            Text(
-                                text = title,
-                                style = MaterialTheme.typography.labelSmall.copy(
-                                    fontWeight = if (selectedTab == index) FontWeight.Bold else FontWeight.Normal,
-                                    fontSize = 12.sp
-                                ),
-                                maxLines = 1
+                    Icon(
+                        imageVector = if (guideExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                        contentDescription = if (guideExpanded) "Collapse guide" else "Expand guide",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+
+                if (guideExpanded) {
+                    TabRow(
+                        selectedTabIndex = selectedTab,
+                        containerColor = Color.Transparent,
+                        contentColor = MaterialTheme.colorScheme.primary,
+                        indicator = { tabPositions ->
+                            TabRowDefaults.SecondaryIndicator(
+                                Modifier.tabIndicatorOffset(tabPositions[selectedTab]),
+                                color = MaterialTheme.colorScheme.primary,
+                                height = 3.dp
+                            )
+                        },
+                        divider = {}
+                    ) {
+                        tabs.forEachIndexed { index, title ->
+                            Tab(
+                                selected = selectedTab == index,
+                                onClick = { selectedTab = index },
+                                text = {
+                                    Text(
+                                        text = title,
+                                        style = MaterialTheme.typography.labelSmall.copy(
+                                            fontWeight = if (selectedTab == index) FontWeight.Bold else FontWeight.Normal,
+                                            fontSize = 12.sp
+                                        ),
+                                        maxLines = 1
+                                    )
+                                }
                             )
                         }
-                    )
+                    }
                 }
             }
         }
 
         // Tab Content
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(24.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.outline))
-        ) {
-            Column(modifier = Modifier.padding(18.dp)) {
-                when (selectedTab) {
-                    0 -> UsbGuide(usbIp = usbIp, port = port, onCopy = onCopy, onOpenTetherSettings = onOpenTetherSettings)
-                    1 -> HotspotGuide(hotspotIp = hotspotIp, port = port, onCopy = onCopy, onOpenHotspotSettings = onOpenHotspotSettings)
-                    2 -> WindowsProxySettingsGuide(suggestedIp = usbIp, port = port, onCopy = onCopy)
-                    3 -> CliGuide(suggestedIp = usbIp, port = port, onCopy = onCopy)
+        if (guideExpanded) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.outline))
+            ) {
+                Column(modifier = Modifier.padding(18.dp)) {
+                    when (selectedTab) {
+                        0 -> UsbGuide(usbIp = usbIp, port = port, onCopy = onCopy, onOpenTetherSettings = onOpenTetherSettings)
+                        1 -> HotspotGuide(hotspotIp = hotspotIp, port = port, onCopy = onCopy, onOpenHotspotSettings = onOpenHotspotSettings)
+                        2 -> WindowsProxySettingsGuide(suggestedIp = usbIp, port = port, onCopy = onCopy)
+                        3 -> CliGuide(suggestedIp = usbIp, port = port, onCopy = onCopy)
+                    }
                 }
             }
         }

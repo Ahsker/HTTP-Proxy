@@ -21,6 +21,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ClearAll
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Search
@@ -50,6 +52,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.VolumeCheckpoint
 import com.example.model.SessionLog
 import com.example.network.NetworkUtils
 import com.example.ui.components.SessionDetailDialog
@@ -59,10 +62,14 @@ import com.example.ui.theme.NaturalGreenTint
 import com.example.ui.theme.NaturalOrangeUpload
 import com.example.ui.theme.NaturalRedError
 import com.example.ui.theme.NaturalRedTint
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @Composable
 fun LogsPage(
     sessionLogs: List<SessionLog>,
+    volumeCheckpoints: List<VolumeCheckpoint>,
     onClearLogs: () -> Unit,
     onCopy: (label: String, text: String) -> Unit,
     modifier: Modifier = Modifier
@@ -70,6 +77,7 @@ fun LogsPage(
     var searchQuery by remember { mutableStateOf("") }
     var selectedMethodFilter by remember { mutableStateOf("ALL") }
     var selectedLogForDetails by remember { mutableStateOf<SessionLog?>(null) }
+    var volumeExpanded by remember { mutableStateOf(false) }
 
     val filteredLogs = remember(sessionLogs, searchQuery, selectedMethodFilter) {
         sessionLogs.filter { log ->
@@ -95,6 +103,14 @@ fun LogsPage(
     val totalVolumeBytes = totalDownloadBytes + totalUploadBytes
     val allSessionsTotalBytes = remember(sessionLogs) { sessionLogs.sumOf { it.bytesSent + it.bytesReceived } }
 
+    // Persistent cumulative volume for the current month (from file ledger)
+    val cumulativeDownload = remember(volumeCheckpoints) { volumeCheckpoints.sumOf { it.downloadBytes } }
+    val cumulativeUpload = remember(volumeCheckpoints) { volumeCheckpoints.sumOf { it.uploadBytes } }
+    val cumulativeTotal = cumulativeDownload + cumulativeUpload
+    val cumulativeSessions = remember(volumeCheckpoints) { volumeCheckpoints.sumOf { it.sessionCount } }
+
+    val timestampFormat = remember { SimpleDateFormat("MMM d, HH:mm", Locale.getDefault()) }
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -102,13 +118,20 @@ fun LogsPage(
     ) {
         Spacer(modifier = Modifier.height(6.dp))
 
-        // Traffic Volume Summary (replaces the duplicated page title — the top bar already labels this tab)
+        // Traffic Volume Summary Header (Clickable for cumulative details)
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable { volumeExpanded = !volumeExpanded }
+                    .padding(vertical = 4.dp)
+            ) {
                 Box(
                     modifier = Modifier
                         .size(36.dp)
@@ -125,7 +148,8 @@ fun LogsPage(
                 Spacer(modifier = Modifier.width(10.dp))
                 Column {
                     Text(
-                        text = NetworkUtils.formatBytes(totalVolumeBytes),
+                        text = if (volumeExpanded) NetworkUtils.formatBytes(cumulativeTotal)
+                               else NetworkUtils.formatBytes(totalVolumeBytes),
                         style = MaterialTheme.typography.titleMedium.copy(
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onBackground,
@@ -133,17 +157,22 @@ fun LogsPage(
                         )
                     )
                     Text(
-                        text = if (filteredLogs.size < sessionLogs.size) {
-                            "Filtered volume (${NetworkUtils.formatBytes(allSessionsTotalBytes)} total) • ${filteredLogs.size} of ${sessionLogs.size} requests"
-                        } else {
-                            "Total volume • ${sessionLogs.size} requests"
-                        },
+                        text = if (volumeExpanded) "Cumulative this month • tap to collapse"
+                               else if (filteredLogs.size < sessionLogs.size) "Filtered volume (${NetworkUtils.formatBytes(allSessionsTotalBytes)} total) • ${filteredLogs.size} of ${sessionLogs.size} req"
+                               else "Current volume • ${sessionLogs.size} requests",
                         style = MaterialTheme.typography.bodySmall.copy(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             fontSize = 11.sp
                         )
                     )
                 }
+                Spacer(modifier = Modifier.width(6.dp))
+                Icon(
+                    imageVector = if (volumeExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp)
+                )
             }
 
             if (sessionLogs.isNotEmpty()) {
@@ -179,6 +208,53 @@ fun LogsPage(
                 tint = NaturalGreenSuccess,
                 modifier = Modifier.weight(1f)
             )
+        }
+
+        // Expanded monthly volume details
+        if (volumeExpanded) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Text(
+                        text = "↑ ${NetworkUtils.formatBytes(cumulativeUpload)}   ↓ ${NetworkUtils.formatBytes(cumulativeDownload)}   •   $cumulativeSessions requests this month",
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f))
+                    Spacer(modifier = Modifier.height(6.dp))
+                    if (volumeCheckpoints.isEmpty()) {
+                        Text(
+                            text = "No checkpoints recorded yet this month",
+                            style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        )
+                    } else {
+                        volumeCheckpoints.reversed().take(30).forEach { cp ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 2.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = timestampFormat.format(Date(cp.timestamp)),
+                                    style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+                                )
+                                Text(
+                                    text = "${NetworkUtils.formatBytes(cp.downloadBytes + cp.uploadBytes)} • ${cp.sessionCount} req",
+                                    style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold, fontSize = 11.sp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         Spacer(modifier = Modifier.height(10.dp))
