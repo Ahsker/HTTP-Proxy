@@ -33,9 +33,34 @@ set "CURRENT_SERVER=None"
 for /f "tokens=3" %%A in ('reg query "%REG_KEY%" /v ProxyEnable 2^>nul') do set "CURRENT_STATUS=%%A"
 for /f "tokens=3" %%A in ('reg query "%REG_KEY%" /v ProxyServer 2^>nul') do set "CURRENT_SERVER=%%A"
 
-:: Auto-detect the phone IP = default gateway of the active connection
+:: Auto-detect default gateway (Phone IP) using ipconfig (with route print and PowerShell fallbacks)
 set "DETECTED_GW="
-for /f "delims=" %%G in ('powershell -NoProfile -Command "try { Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction Stop ^| Where-Object { $_.NextHop -ne '0.0.0.0' } ^| Sort-Object RouteMetric ^| Select-Object -First 1 -ExpandProperty NextHop } catch { }" 2^>nul') do set "DETECTED_GW=%%G"
+for /f "tokens=2 delims=:" %%A in ('ipconfig 2^>nul ^| findstr /i /c:"Default Gateway" /c:"Gateway"') do (
+    for /f "tokens=1" %%B in ("%%A") do (
+        set "GW_VAL=%%B"
+        if not "!GW_VAL!"=="" (
+            if not "!GW_VAL!"=="0.0.0.0" (
+                echo !GW_VAL! | findstr /r "^[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*$" >nul 2>&1
+                if not errorlevel 1 (
+                    set "DETECTED_GW=!GW_VAL!"
+                )
+            )
+        )
+    )
+)
+
+if not defined DETECTED_GW (
+    for /f "tokens=3" %%A in ('route print 0.0.0.0 2^>nul ^| findstr "\<0.0.0.0\>"') do (
+        if not "%%A"=="0.0.0.0" (
+            echo %%A | findstr /r "^[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*$" >nul 2>&1
+            if not errorlevel 1 set "DETECTED_GW=%%A"
+        )
+    )
+)
+
+if not defined DETECTED_GW (
+    for /f "delims=" %%G in ('powershell -NoProfile -Command "try { Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction Stop ^| Where-Object { $_.NextHop -ne '0.0.0.0' -and $_.NextHop -match '^\d+\.\d+\.\d+\.\d+$' } ^| Sort-Object RouteMetric ^| Select-Object -First 1 -ExpandProperty NextHop } catch { }" 2^>nul') do set "DETECTED_GW=%%G"
+)
 
 echo ========================================================
 echo         WINDOWS PROXY AND TCP OPTIMIZER CONTROLLER
@@ -49,9 +74,9 @@ if "!CURRENT_STATUS!"=="0x1" (
     echo   Active Proxy   : None
 )
 if defined DETECTED_GW (
-    echo   Phone IP       : !DETECTED_GW!  [auto-detected]
+    echo   Gateway IP     : !DETECTED_GW!  [auto-detected via ipconfig]
 ) else (
-    echo   Phone IP       : not detected - manual entry required
+    echo   Gateway IP     : not detected - manual entry required
 )
 if "!IS_ADMIN!"=="1" (
     echo   Privileges     : Administrator (Full TCP optimization)
@@ -98,26 +123,34 @@ if "!CURRENT_STATUS!"=="0x1" (
 :: =============================================================
 :ENABLE_PROXY
 echo.
-if defined DETECTED_GW (
-    echo   Detected phone IP ^(!MODE_NAME!^): !DETECTED_GW!
-    echo.
-    choice /c:YMN /n /m "   Use !DETECTED_GW!:!PROXY_PORT! as the proxy? [Y]es / [M]anual / [N]o: "
-    if errorlevel 3 goto :MENU
-    if errorlevel 2 goto :MANUAL_IP
-    set "PHONE_IP=!DETECTED_GW!"
-    goto :APPLY_PROXY
-)
-
-:MANUAL_IP
+echo ========================================================
+echo   CONFIGURING PROXY FOR: !MODE_NAME!
+echo ========================================================
 echo.
-echo   Enter the phone IP address shown in the HTTP Proxy app.
-set "PHONE_IP="
-set /p "PHONE_IP=   Phone IP [e.g. 10.169.192.251]: "
-if not defined PHONE_IP (
+if defined DETECTED_GW (
+    echo   Auto-detected Gateway (Phone IP): !DETECTED_GW!
     echo.
-    echo   No IP entered - returning to menu.
-    timeout /t 2 >nul
-    goto :MENU
+    set "USER_INPUT_IP="
+    set /p "USER_INPUT_IP=   Phone IP [Press ENTER to use !DETECTED_GW!]: "
+    if defined USER_INPUT_IP (
+        set "PHONE_IP=!USER_INPUT_IP!"
+    ) else (
+        set "PHONE_IP=!DETECTED_GW!"
+    )
+    goto :APPLY_PROXY
+) else (
+    echo   Could not automatically detect Default Gateway.
+    echo   (Ensure phone is connected with USB Tethering or Wi-Fi Hotspot on)
+    echo.
+    set "PHONE_IP="
+    set /p "PHONE_IP=   Phone IP [e.g. 192.168.42.129]: "
+    if not defined PHONE_IP (
+        echo.
+        echo   No IP entered - returning to menu.
+        timeout /t 2 >nul
+        goto :MENU
+    )
+    goto :APPLY_PROXY
 )
 
 :APPLY_PROXY
